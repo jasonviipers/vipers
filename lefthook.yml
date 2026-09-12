@@ -1,0 +1,20 @@
+# Lefthook configuration
+# https://github.com/evilmartians/lefthook
+
+pre-commit:
+  parallel: true
+  jobs:
+    - run: bun x ultracite fix
+      glob:
+        - "**/*.js"
+        - "**/*.jsx"
+        - "**/*.ts"
+        - "**/*.tsx"
+        - "**/*.json"
+        - "**/*.jsonc"
+        - "**/*.css"
+      stage_fixed: true
+    - name: biome
+      glob: "*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}"
+      run: bun biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true

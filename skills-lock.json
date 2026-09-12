@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "skills": {
+    "ai-sdk": {
+      "source": "vercel/ai",
+      "sourceType": "github",
+      "skillPath": "skills/use-ai-sdk/SKILL.md",
+      "computedHash": "dfce60b0f2749991e000123526e298d5ede1c8353d837e71886fb3c8e5f8b730"
+    },
+    "analyze-logs": {
+      "source": "evlog.dev",
+      "sourceUrl": "https://www.evlog.dev",
+      "sourceType": "well-known",
+      "computedHash": "4a04a46743f211420f0844d09110ba4f6219e70f59c89377ba0293650ec12ed4",
+      "wellKnownDigest": "sha256:85611ea5ab31c54e745ad5ebaf994c6aff1405c58a218c26a7ecef02244193b6"
+    },
+    "build-audit-logs": {
+      "source": "evlog.dev",
+      "sourceUrl": "https://www.evlog.dev",
+      "sourceType": "well-known",
+      "computedHash": "c10e91d4b8dae0a6c94633393a5dbf8755a4c53f24c8fdc036698aece3d1c81a",
+      "wellKnownDigest": "sha256:7600fc70881807ff82d4f7d2f48e8eac6d1e4edd5d3dc6c5d509dd748c63fcda"
+    },
+    "next-cache-components-adoption": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "skillPath": "skills/next-cache-components-adoption/SKILL.md",
+      "computedHash": "e8048c51a37d8973349477c9bb0a32d9f5f796a70ebaa10c89b59ac8015b9c55"
+    },
+    "next-cache-components-optimizer": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "skillPath": "skills/next-cache-components-optimizer/SKILL.md",
+      "computedHash": "c62f6c13119c4e9027268edaa07291c33d74a676e1bd93583349c07efd990f6b"
+    },
+    "next-dev-loop": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "skillPath": "skills/next-dev-loop/SKILL.md",
+      "computedHash": "9a2cd6e78f118086f3b2dc69ba98bb34b3fb873a8bcf622eea86a0fe8e540009"
+    },
+    "next-partial-prefetching-adoption": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "skillPath": "skills/next-partial-prefetching-adoption/SKILL.md",
+      "computedHash": "1ca75b686e91327da75bc3c286ba037a1f7e6a8d613ce77682c634520e019791"
+    },
+    "review-logging-patterns": {
+      "source": "evlog.dev",
+      "sourceUrl": "https://www.evlog.dev",
+      "sourceType": "well-known",
+      "computedHash": "16cbe41eda627ad6366f39542c1a93421a7ddbe0f093719f921349f2f34510fe",
+      "wellKnownDigest": "sha256:4850d715280810bc676a551fccb33f51334cca5aa709e4e69c013983196e69f8"
+    },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "d04e43ec01e921558b93bb8046c14a42a22556689a2827243df900825a4e1604"
+    },
+    "ultracite": {
+      "source": "haydenbleasel/ultracite",
+      "sourceType": "github",
+      "skillPath": "skills/ultracite/SKILL.md",
+      "computedHash": "94f8c0b39ae60f00d0d003faa8b853fdbde6fc785f36e3475797035500173da3"
+    },
+    "vercel-composition-patterns": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/composition-patterns/SKILL.md",
+      "computedHash": "10eb4ec94577b79ae98c63ce3e7f35f8a6a06436a4011bff083b397de6960eeb"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "6b526d013e28073246a36f99b529bc43745d30832ecfa8217b359c34f260ca6b"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-design-guidelines/SKILL.md",
+      "computedHash": "d8e7d3afe37dcc8a97b99ffb5afdb4d0919ae0092ea8b68f44eb201f035e33ac"
+    }
+  }
+}
