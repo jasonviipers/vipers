@@ -1,7 +1,0 @@
-{
-  "extends": "@viipers/config/tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "strictNullChecks": true
-  }
-}

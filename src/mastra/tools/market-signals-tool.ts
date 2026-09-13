@@ -1,0 +1,353 @@
+import { XMLParser } from "fast-xml-parser";
+import vaderSentiment from "vader-sentiment";
+import { env } from "@/env";
+
+/**
+ * SENTIMENT team data source: Reddit + RSS news, scored with VADER.
+ *
+ * This replaces the earlier deterministic (asset.length-based) stub. Failures
+ * fall back to a short-lived stale cache; with no stale cache in production,
+ * it throws rather than silently trading on invented data. In non-production
+ * environments with no cache and no network, it falls back to a clearly
+ * labeled neutral reading so local dev/test doesn't require live Reddit/RSS
+ * access.
+ */
+export interface MarketSignals {
+  asset: string;
+  breakdown: {
+    redditScore: number;
+    rssScore: number;
+  };
+  fetchedAt: number;
+  highlights: string[];
+  sentimentScore: number; // 0..1 (0.5 = neutral)
+  socialVolume: number; // total posts + articles analyzed
+  sources: {
+    reddit: number;
+    rss: number;
+  };
+  stale?: boolean;
+}
+
+const SUBREDDITS = [
+  "CryptoCurrency",
+  "Bitcoin",
+  "ethereum",
+  "solana",
+  "wallstreetbets",
+  "stocks",
+];
+
+const RSS_FEEDS: { url: string; label: string }[] = [
+  { label: "CoinTelegraph", url: "https://cointelegraph.com/rss" },
+  {
+    label: "CoinDesk",
+    url: "https://www.coindesk.com/arc/outboundfeeds/rss/",
+  },
+  { label: "Decrypt", url: "https://decrypt.co/feed" },
+  { label: "BitcoinMag", url: "https://bitcoinmagazine.com/feed" },
+  { label: "Investing.com", url: "https://www.investing.com/rss/news.rss" },
+];
+
+// Friendly-name mapping for search relevance. Keyed by the BASE symbol
+// (e.g. "BTC"), since callers may pass "BTC-USD" style pairs matching the
+// convention used in contracts.ts / config.ts.
+const ASSET_NAMES: Record<string, string[]> = {
+  AAPL: ["apple"],
+  BTC: ["bitcoin", "btc"],
+  DOGE: ["dogecoin", "doge"],
+  ETH: ["ethereum", "eth", "ether"],
+  GOOGL: ["google", "alphabet"],
+  MSFT: ["microsoft"],
+  NVDA: ["nvidia"],
+  SOL: ["solana", "sol"],
+  TSLA: ["tesla"],
+  XRP: ["ripple", "xrp"],
+};
+
+const TTL = 5 * 60_000;
+const STALE_TTL = 60 * 60_000;
+const cache = new Map<
+  string,
+  { expires: number; staleUntil: number; signals: MarketSignals }
+>();
+
+const xml = new XMLParser({ ignoreAttributes: false, trimValues: true });
+
+const BASE_SYMBOL_RE = /[-/]/;
+
+function baseSymbol(asset: string): string {
+  // "BTC-USD" / "BTC/USD" -> "BTC"; contracts.ts documents assets this way,
+  // so without this split, every crypto pair misses ASSET_NAMES and falls
+  // back to searching for the literal string "btc-usd".
+  return asset.toUpperCase().split(BASE_SYMBOL_RE)[0] ?? asset.toUpperCase();
+}
+
+function assetTerms(asset: string): string[] {
+  const key = baseSymbol(asset);
+  return ASSET_NAMES[key] ?? [key.toLowerCase()];
+}
+
+function mentionsAsset(text: string, terms: string[]): boolean {
+  const lower = text.toLowerCase();
+  return terms.some((t) => lower.includes(t));
+}
+
+function scoreText(text: string): number {
+  // Real API: vader.SentimentIntensityAnalyzer.polarity_scores(text).
+  // (Previously called as Sentiment.analyze(text), which doesn't exist on
+  // this package and throws at runtime.)
+  const { compound } =
+    vaderSentiment.SentimentIntensityAnalyzer.polarity_scores(text);
+  return compound;
+}
+
+function averageToUnit(nums: number[]): number {
+  if (nums.length === 0) {
+    return 0.5;
+  }
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+  return Number(((avg + 1) / 2).toFixed(3));
+}
+
+async function fetchWithTimeout(url: string, ms = 8000): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, {
+      headers: {
+        Accept:
+          "application/json, application/rss+xml, application/xml, text/xml, */*",
+        "User-Agent": "viipers-market-signals/1.0 (by /u/viipers)",
+      },
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+interface RedditPost {
+  num_comments?: number;
+  permalink?: string;
+  score?: number;
+  selftext?: string;
+  subreddit?: string;
+  title: string;
+}
+
+async function fetchRedditPosts(
+  asset: string,
+  limitPerSub = 20,
+): Promise<RedditPost[]> {
+  const terms = assetTerms(asset);
+  const query = terms[0] ?? baseSymbol(asset).toLowerCase();
+  const out: RedditPost[] = [];
+
+  await Promise.all(
+    SUBREDDITS.map(async (sub) => {
+      const url =
+        `https://www.reddit.com/r/${sub}/search.json` +
+        `?q=${encodeURIComponent(query)}&restrict_sr=1&sort=relevance&t=week&limit=${limitPerSub}`;
+      try {
+        const res = await fetchWithTimeout(url);
+        if (!res.ok) {
+          return;
+        }
+        const json = (await res.json()) as {
+          data?: { children?: { data: RedditPost }[] };
+        };
+        const children = json.data?.children ?? [];
+        for (const c of children) {
+          const p = c.data;
+          if (!p?.title) {
+            continue;
+          }
+          const blob = `${p.title} ${p.selftext ?? ""}`;
+          if (mentionsAsset(blob, terms)) {
+            out.push(p);
+          }
+        }
+      } catch {
+        // One dead/rate-limited subreddit shouldn't kill the run.
+        // NOTE (ops): Reddit's public .json endpoints frequently
+        // rate-limit or block cloud provider IP ranges (AWS/GCP)
+        // without warning. Monitor `sources.reddit` staying near 0
+        // as a signal this path has silently gone dark.
+      }
+    }),
+  );
+
+  return out;
+}
+
+interface RssItem {
+  description?: string;
+  link?: string;
+  title: string;
+}
+
+async function fetchRssItems(
+  asset: string,
+): Promise<{ items: RssItem[]; feedCount: number }> {
+  const terms = assetTerms(asset);
+  const items: RssItem[] = [];
+  let feedCount = 0;
+
+  await Promise.all(
+    RSS_FEEDS.map(async (feed) => {
+      try {
+        const res = await fetchWithTimeout(feed.url);
+        if (!res.ok) {
+          return;
+        }
+        const text = await res.text();
+        const parsed = xml.parse(text);
+        const channel =
+          parsed?.rss?.channel ??
+          parsed?.feed ??
+          parsed?.["rdf:RDF"]?.channel ??
+          null;
+        if (!channel) {
+          return;
+        }
+
+        feedCount += 1;
+        const rawItems = channel.item ?? channel.entry ?? [];
+        const list = Array.isArray(rawItems) ? rawItems : [rawItems];
+
+        for (const it of list) {
+          const title =
+            typeof it.title === "string"
+              ? it.title
+              : (it.title?.["#text"] ?? "");
+          const desc =
+            typeof it.description === "string"
+              ? it.description
+              : (it.summary?.["#text"] ?? it.summary ?? "");
+          const link =
+            typeof it.link === "string" ? it.link : (it.link?.["@_href"] ?? "");
+          if (!title) {
+            continue;
+          }
+          const blob = `${title} ${desc}`;
+          if (mentionsAsset(blob, terms)) {
+            items.push({ description: desc, link, title });
+          }
+        }
+      } catch {
+        // Swallow per-feed failures; other feeds still contribute.
+      }
+    }),
+  );
+
+  return { feedCount, items };
+}
+
+export async function fetchMarketSignals(
+  asset: string,
+): Promise<MarketSignals> {
+  const key = asset.toUpperCase();
+  const now = Date.now();
+  const cached = cache.get(key);
+
+  if (cached && cached.expires > now) {
+    return cached.signals;
+  }
+
+  try {
+    const [redditPosts, rss] = await Promise.all([
+      fetchRedditPosts(key),
+      fetchRssItems(key),
+    ]);
+
+    const redditScores = redditPosts.map((p) =>
+      scoreText(`${p.title} ${p.selftext ?? ""}`),
+    );
+    const redditScore = averageToUnit(redditScores);
+
+    const rssScores = rss.items.map((i) =>
+      scoreText(`${i.title} ${i.description ?? ""}`),
+    );
+    const rssScore = averageToUnit(rssScores);
+
+    const total = redditPosts.length + rss.items.length;
+    const combined =
+      total === 0
+        ? 0.5
+        : (redditScore * redditPosts.length + rssScore * rss.items.length) /
+          total;
+
+    const highlightCandidates: { text: string; weight: number }[] = [];
+    for (const p of redditPosts.slice(0, 10)) {
+      const s = Math.abs(scoreText(`${p.title} ${p.selftext ?? ""}`));
+      highlightCandidates.push({
+        text: p.title.length > 120 ? `${p.title.slice(0, 117)}…` : p.title,
+        weight: s + (p.score ?? 0) / 1000,
+      });
+    }
+    for (const i of rss.items.slice(0, 10)) {
+      const s = Math.abs(scoreText(`${i.title} ${i.description ?? ""}`));
+      highlightCandidates.push({
+        text: i.title.length > 120 ? `${i.title.slice(0, 117)}…` : i.title,
+        weight: s,
+      });
+    }
+
+    const highlights = highlightCandidates
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, 3)
+      .map((h) => h.text);
+
+    const signals: MarketSignals = {
+      asset: key,
+      breakdown: { redditScore, rssScore },
+      fetchedAt: now,
+      highlights:
+        highlights.length > 0
+          ? highlights
+          : [`[no data] No recent Reddit/RSS items for ${key}`],
+      sentimentScore: Number(combined.toFixed(3)),
+      socialVolume: total,
+      sources: { reddit: redditPosts.length, rss: rss.items.length },
+    };
+
+    cache.set(key, {
+      expires: now + TTL,
+      signals,
+      staleUntil: now + STALE_TTL,
+    });
+    return signals;
+  } catch (error) {
+    const stale = cache.get(key);
+    if (stale && stale.staleUntil > now) {
+      return { ...stale.signals, stale: true };
+    }
+    // No cache to fall back on. In production, fail closed rather than
+    // trade on invented data. Outside production, degrade to a clearly
+    // labeled neutral reading so local dev/test doesn't need live network.
+    if (
+      env.NODE_ENV === "production" &&
+      env.ALLOW_STUB_MARKET_DATA !== "true"
+    ) {
+      throw error;
+    }
+    return {
+      asset: key,
+      breakdown: { redditScore: 0.5, rssScore: 0.5 },
+      fetchedAt: now,
+      highlights: [
+        `[dev-fallback] Live fetch failed for ${key}: ${String(error)}`,
+      ],
+      sentimentScore: 0.5,
+      socialVolume: 0,
+      sources: { reddit: 0, rss: 0 },
+    };
+  }
+}
+
+export function fetchMarketSignalsBatch(
+  assets: string[],
+): Promise<MarketSignals[]> {
+  return Promise.all(assets.map(fetchMarketSignals));
+}

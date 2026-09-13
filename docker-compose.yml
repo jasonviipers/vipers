@@ -1,59 +1,21 @@
-name: viipers
-
 services:
-  web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-      secrets:
-        - web_env
-    init: true
-    ports:
-      - "3001:3001"
-    env_file:
-      - path: apps/web/.env
-        required: false
-    environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/viipers
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://localhost:3001/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+  db:
+    image: postgres:18-alpine
+    container_name: viipers-db
     restart: unless-stopped
-
-  postgres:
-    image: postgres:18
-    container_name: viipers-postgres
     environment:
-      POSTGRES_DB: viipers
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: viipers
     ports:
       - "5432:5432"
     volumes:
-      - viipers_postgres_data:/var/lib/postgresql
+      - viipers_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d viipers"]
+      interval: 5s
       timeout: 5s
-      retries: 5
-    restart: unless-stopped
+      retries: 10
 
 volumes:
-  viipers_postgres_data:
-
-# BuildKit makes these available only while install/build commands run.
-secrets:
-  web_env:
-    file: apps/web/.env
+  viipers_pgdata:

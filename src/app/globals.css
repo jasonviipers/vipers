@@ -1,0 +1,356 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #0a0e14;
+  --foreground: #c5cdd8;
+  --card: #0d1117;
+  --card-foreground: #c5cdd8;
+  --popover: #0d1117;
+  --popover-foreground: #c5cdd8;
+  --primary: #00d4aa;
+  --primary-foreground: #0a0e14;
+  --secondary: #131a24;
+  --secondary-foreground: #8b98a8;
+  --muted: #131a24;
+  --muted-foreground: #5a6a7a;
+  --accent: #ff8c00;
+  --accent-foreground: #0a0e14;
+  --destructive: #ff4444;
+  --destructive-foreground: #ff4444;
+  --border: #1a2332;
+  --input: #131a24;
+  --ring: #00d4aa;
+  --chart-1: #00d4aa;
+  --chart-2: #ff8c00;
+  --chart-3: #00b8d4;
+  --chart-4: #ff4444;
+  --chart-5: #ffd700;
+  --radius: 0.25rem;
+  --sidebar: #0d1117;
+  --sidebar-foreground: #c5cdd8;
+  --sidebar-primary: #00d4aa;
+  --sidebar-primary-foreground: #0a0e14;
+  --sidebar-accent: #131a24;
+  --sidebar-accent-foreground: #c5cdd8;
+  --sidebar-border: #1a2332;
+  --sidebar-ring: #00d4aa;
+
+  --terminal-green: #00d4aa;
+  --terminal-amber: #ff8c00;
+  --terminal-cyan: #00b8d4;
+  --terminal-red: #ff4444;
+  --terminal-gold: #ffd700;
+  --terminal-dim: #3a4a5a;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
+  --font-mono: var(--font-mono), "JetBrains Mono", monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-terminal-green: var(--terminal-green);
+  --color-terminal-amber: var(--terminal-amber);
+  --color-terminal-cyan: var(--terminal-cyan);
+  --color-terminal-red: var(--terminal-red);
+  --color-terminal-gold: var(--terminal-gold);
+  --color-terminal-dim: var(--terminal-dim);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* -- Color Scheme Transitions ---------------------------------------------- */
+
+:root {
+  transition:
+    color 0.3s ease,
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    text-shadow 0.3s ease;
+}
+
+*,
+*::before,
+*::after {
+  transition:
+    color 0.3s ease,
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+/* -- Color Schemes ---------------------------------------------------------- */
+
+[data-color-scheme="phosphor"] {
+  --terminal-green: #00d4aa;
+  --terminal-amber: #ff8c00;
+  --terminal-cyan: #00b8d4;
+  --terminal-red: #ff4444;
+  --terminal-gold: #ffd700;
+  --terminal-dim: #3a4a5a;
+  --primary: #00d4aa;
+  --accent: #ff8c00;
+  --ring: #00d4aa;
+  --chart-1: #00d4aa;
+  --chart-2: #ff8c00;
+  --chart-3: #00b8d4;
+  --chart-4: #ff4444;
+  --chart-5: #ffd700;
+  --sidebar-primary: #00d4aa;
+  --sidebar-ring: #00d4aa;
+}
+
+[data-color-scheme="arctic"] {
+  --terminal-green: #4fc3f7;
+  --terminal-amber: #81d4fa;
+  --terminal-cyan: #b3e5fc;
+  --terminal-red: #ef5350;
+  --terminal-gold: #80deea;
+  --terminal-dim: #37474f;
+  --primary: #4fc3f7;
+  --accent: #81d4fa;
+  --ring: #4fc3f7;
+  --chart-1: #4fc3f7;
+  --chart-2: #81d4fa;
+  --chart-3: #b3e5fc;
+  --chart-4: #ef5350;
+  --chart-5: #80deea;
+  --border: #1a2a3a;
+  --sidebar-primary: #4fc3f7;
+  --sidebar-ring: #4fc3f7;
+}
+
+[data-color-scheme="amber"] {
+  --terminal-green: #ffb300;
+  --terminal-amber: #ff8f00;
+  --terminal-cyan: #ffd54f;
+  --terminal-red: #ff5722;
+  --terminal-gold: #ffe082;
+  --terminal-dim: #4e342e;
+  --primary: #ffb300;
+  --accent: #ff8f00;
+  --ring: #ffb300;
+  --chart-1: #ffb300;
+  --chart-2: #ff8f00;
+  --chart-3: #ffd54f;
+  --chart-4: #ff5722;
+  --chart-5: #ffe082;
+  --border: #2a1f14;
+  --sidebar-primary: #ffb300;
+  --sidebar-ring: #ffb300;
+}
+
+[data-color-scheme="crimson"] {
+  --terminal-green: #ff5252;
+  --terminal-amber: #ff8a65;
+  --terminal-cyan: #ff80ab;
+  --terminal-red: #d32f2f;
+  --terminal-gold: #ffab91;
+  --terminal-dim: #4a2c2a;
+  --primary: #ff5252;
+  --accent: #ff8a65;
+  --ring: #ff5252;
+  --chart-1: #ff5252;
+  --chart-2: #ff8a65;
+  --chart-3: #ff80ab;
+  --chart-4: #d32f2f;
+  --chart-5: #ffab91;
+  --border: #2a1a1a;
+  --sidebar-primary: #ff5252;
+  --sidebar-ring: #ff5252;
+}
+
+[data-color-scheme="matrix"] {
+  --terminal-green: #00ff41;
+  --terminal-amber: #39ff14;
+  --terminal-cyan: #76ff03;
+  --terminal-red: #ff1744;
+  --terminal-gold: #c6ff00;
+  --terminal-dim: #1b3a1b;
+  --primary: #00ff41;
+  --accent: #39ff14;
+  --ring: #00ff41;
+  --chart-1: #00ff41;
+  --chart-2: #39ff14;
+  --chart-3: #76ff03;
+  --chart-4: #ff1744;
+  --chart-5: #c6ff00;
+  --background: #050a05;
+  --card: #0a120a;
+  --secondary: #0f1a0f;
+  --border: #1a2e1a;
+  --sidebar-primary: #00ff41;
+  --sidebar-ring: #00ff41;
+}
+
+[data-color-scheme="synthwave"] {
+  --terminal-green: #e040fb;
+  --terminal-amber: #7c4dff;
+  --terminal-cyan: #ea80fc;
+  --terminal-red: #ff1744;
+  --terminal-gold: #b388ff;
+  --terminal-dim: #311b5e;
+  --primary: #e040fb;
+  --accent: #7c4dff;
+  --ring: #e040fb;
+  --chart-1: #e040fb;
+  --chart-2: #7c4dff;
+  --chart-3: #ea80fc;
+  --chart-4: #ff1744;
+  --chart-5: #b388ff;
+  --background: #0a060e;
+  --card: #110a18;
+  --secondary: #1a0f24;
+  --border: #2a1a3e;
+  --sidebar-primary: #e040fb;
+  --sidebar-ring: #e040fb;
+}
+
+/* Bloomberg terminal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--terminal-dim);
+}
+
+/* Ticker animation */
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+.animate-ticker {
+  animation: ticker-scroll 60s linear infinite;
+}
+
+/* Terminal glow */
+.terminal-glow {
+  text-shadow: 0 0 4px var(--terminal-green);
+}
+
+/* Candlestick pulse */
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* ─── Real-time value flash animations ─────────────────────────────────── */
+@keyframes flash-green {
+  0% {
+    color: var(--terminal-green);
+    text-shadow: 0 0 6px var(--terminal-green);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+@keyframes flash-red {
+  0% {
+    color: var(--terminal-red);
+    text-shadow: 0 0 6px var(--terminal-red);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+.flash-up {
+  animation: flash-green 0.6s ease-out forwards;
+}
+.flash-down {
+  animation: flash-red 0.6s ease-out forwards;
+}
+
+/* Slide-in for new feed items */
+@keyframes slide-in-top {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-slide-in {
+  animation: slide-in-top 0.3s ease-out;
+}
+
+/* ─── Reduced motion ───────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .flash-up,
+  .flash-down,
+  .animate-slide-in,
+  .animate-pulse-soft,
+  .animate-ping {
+    animation: none !important;
+  }
+  .animate-ticker {
+    animation-duration: 0s !important;
+  }
+}
