@@ -46,6 +46,8 @@ export interface AgentFleetEntry {
 export interface AgentsFleetResponse {
   items: AgentFleetEntry[];
   onlineCount: number;
+  /** Online-window seconds (3 × operator heartbeat interval, bounded). */
+  onlineWindowS: number;
   total: number;
 }
 

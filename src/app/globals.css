@@ -341,6 +341,18 @@
   animation: slide-in-top 0.3s ease-out;
 }
 
+/* ─── Operator ANIMATIONS setting (data-animations="off" on the layout) ── */
+[data-animations="off"] .flash-up,
+[data-animations="off"] .flash-down,
+[data-animations="off"] .animate-slide-in,
+[data-animations="off"] .animate-pulse-soft,
+[data-animations="off"] .animate-ping {
+  animation: none;
+}
+[data-animations="off"] .animate-ticker {
+  animation-duration: 0s;
+}
+
 /* ─── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .flash-up,

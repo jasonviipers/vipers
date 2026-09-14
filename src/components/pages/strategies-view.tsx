@@ -19,8 +19,26 @@ import {
   strategyInputSchema,
   strategyQueries,
 } from "@/lib/queries/strategies";
+import { loadTerminalSettings } from "@/lib/terminal-settings";
 
 // -- helpers ----------------------------------------------------------------
+
+/**
+ * New-strategy form seed. The LLM provider preselects from the operator's
+ * AGENT CONFIGURATION → DEFAULT LLM PROVIDER setting (settings are loaded
+ * lazily at form open; reset restores the setting's provider).
+ */
+function emptyForm(): StrategyInput {
+  const configured = loadTerminalSettings().defaultLlm;
+  // Guard against a stale/unknown value in stored settings.
+  const provider = (LLM_PROVIDERS as readonly string[]).includes(configured)
+    ? (configured as StrategyInput["llmProvider"])
+    : EMPTY_FORM.llmProvider;
+  return {
+    ...EMPTY_FORM,
+    llmProvider: provider,
+  };
+}
 
 const AVAILABLE_ASSETS = [
   "BTC",
@@ -810,7 +828,7 @@ export function StrategiesView() {
       {modal?.mode === "create" && (
         <StrategyFormModal
           title="CREATE NEW STRATEGY"
-          initial={EMPTY_FORM}
+          initial={emptyForm()}
           onSave={handleCreate}
           onClose={() => setModal(null)}
         />

@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 
 export interface FeedEvent {
   id: string;
-  category: "trade" | "signal" | "alert" | "heartbeat";
+  category: "consensus" | "trade" | "signal" | "alert" | "heartbeat";
   asset: string | null;
   /** Pre-formatted one-liner; the client renders it verbatim. */
   message: string;

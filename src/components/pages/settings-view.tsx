@@ -29,6 +29,24 @@ import {
   type TerminalSettings,
 } from "@/lib/terminal-settings";
 
+// -- Server-enforced runtime settings (runtime_settings DB row) --------------
+
+interface RuntimeSettings {
+  consensusQuorum: number;
+  debugMode: boolean;
+  heartbeatInterval: number;
+  maxDailyLossPct: number;
+  maxOpenPositions: number;
+}
+
+const RUNTIME_FALLBACK: RuntimeSettings = {
+  consensusQuorum: 50,
+  debugMode: false,
+  heartbeatInterval: 30,
+  maxDailyLossPct: 3,
+  maxOpenPositions: 10,
+};
+
 // -- Section wrapper ----------------------------------------------------------
 
 function SettingsSection({
@@ -224,6 +242,7 @@ function SliderRow({
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
           className="absolute inset-0 w-full cursor-pointer opacity-0"
+          aria-label={label}
         />
       </div>
     </div>
@@ -344,8 +363,76 @@ export function SettingsView() {
     setSaved(false);
   }
 
-  // --- Kill switch: server-owned, not a localStorage preference ---
+  // --- Server-enforced runtime settings (optimistic, rollback on error) ----
   const queryClient = useQueryClient();
+  const RUNTIME_KEY = ["settings", "runtime"] as const;
+
+  const runtimeQuery = useQuery<RuntimeSettings>({
+    queryFn: async () => {
+      const res = await fetch("/api/settings/runtime");
+      if (!res.ok) {
+        throw new Error(`API ${res.status}`);
+      }
+      return (await res.json()) as RuntimeSettings;
+    },
+    queryKey: RUNTIME_KEY,
+    staleTime: 10_000,
+  });
+
+  const runtimeMutation = useMutation({
+    mutationFn: async (patch: Partial<RuntimeSettings>) => {
+      const key = getStoredApiKey();
+      const res = await fetch("/api/settings/runtime", {
+        body: JSON.stringify(patch),
+        headers: {
+          "content-type": "application/json",
+          ...(key ? { "x-api-key": key } : {}),
+        },
+        method: "PUT",
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(`Settings update failed: ${res.status} ${detail}`);
+      }
+      return (await res.json()) as RuntimeSettings;
+    },
+    // Optimistic: apply immediately, roll back on failure, reconcile after.
+    onMutate: async (patch) => {
+      await queryClient.cancelQueries({ queryKey: RUNTIME_KEY });
+      const previous =
+        queryClient.getQueryData<RuntimeSettings>(RUNTIME_KEY) ??
+        RUNTIME_FALLBACK;
+      queryClient.setQueryData<RuntimeSettings>(RUNTIME_KEY, {
+        ...previous,
+        ...patch,
+      });
+      return { previous };
+    },
+    onError: (_error, _patch, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(RUNTIME_KEY, context.previous);
+      }
+      setRuntimeError(
+        "UPDATE FAILED — STATE ROLLED BACK (write access required)",
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: RUNTIME_KEY });
+    },
+  });
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+
+  const runtime = runtimeQuery.data ?? RUNTIME_FALLBACK;
+
+  function setRuntime<K extends keyof RuntimeSettings>(
+    key: K,
+    value: RuntimeSettings[K],
+  ) {
+    setRuntimeError(null);
+    runtimeMutation.mutate({ [key]: value });
+  }
+
+  // --- Kill switch: server-owned, not a localStorage preference ---
   const killSwitchQuery = useQuery<boolean>({
     queryFn: async () => {
       const res = await fetch("/api/risk/kill-switch");
@@ -443,7 +530,7 @@ export function SettingsView() {
             <SettingsSection
               icon={Wallet}
               title="BROKER ACCOUNTS"
-              description="Connect and manage trading broker integrations"
+              description="Server-side broker status and paper/live execution mode"
             >
               <BrokerAccountsSection />
             </SettingsSection>
@@ -464,7 +551,7 @@ export function SettingsView() {
             <SettingsSection
               icon={Monitor}
               title="DISPLAY & INTERFACE"
-              description="Visual preferences and terminal behavior"
+              description="Visual preferences and terminal behavior (this device)"
             >
               <InlineSelect
                 label="TIMEZONE"
@@ -475,7 +562,7 @@ export function SettingsView() {
               />
               <InlineSelect
                 label="BASE CURRENCY"
-                description="Default denomination for portfolio values"
+                description="Denomination for portfolio and P&L values"
                 value={settings.baseCurrency}
                 options={["USD", "EUR", "GBP", "JPY", "BTC", "ETH"]}
                 onChange={(v) => set("baseCurrency", v)}
@@ -488,7 +575,7 @@ export function SettingsView() {
               />
               <ToggleRow
                 label="ANIMATIONS"
-                description="Enable chart and transition animations"
+                description="Flash and slide transitions for live values"
                 value={settings.animationsEnabled}
                 onChange={(v) => set("animationsEnabled", v)}
               />
@@ -510,52 +597,33 @@ export function SettingsView() {
             <SettingsSection
               icon={Shield}
               title="RISK MANAGEMENT"
-              description="Global risk parameters and safety limits"
+              description="Server-enforced limits — gated by the risk engine on every proposal"
             >
-              <SliderRow
-                label="MAX DAILY DRAWDOWN"
-                description="Halt all trading if daily loss exceeds this limit"
-                value={settings.maxDailyDrawdown}
-                min={1}
-                max={20}
-                suffix="%"
-                color="text-terminal-red"
-                onChange={(v) => set("maxDailyDrawdown", v)}
-              />
+              <div className="flex flex-col gap-1">
+                <SliderRow
+                  label="MAX DAILY LOSS"
+                  description="Risk gate rejects proposals when today's realized loss exceeds this share of capital"
+                  value={runtime.maxDailyLossPct}
+                  min={1}
+                  max={20}
+                  suffix="%"
+                  color="text-terminal-red"
+                  onChange={(v) => setRuntime("maxDailyLossPct", v)}
+                />
+                {runtimeQuery.isError && (
+                  <span className="text-[10px] text-terminal-red">
+                    SERVER UNREACHABLE — showing defaults
+                  </span>
+                )}
+              </div>
               <SliderRow
                 label="MAX OPEN POSITIONS"
-                description="Maximum concurrent open positions across all agents"
-                value={settings.maxOpenPositions}
+                description="Risk gate rejects proposals that would exceed this many concurrent open positions"
+                value={runtime.maxOpenPositions}
                 min={1}
                 max={50}
                 color="text-terminal-amber"
-                onChange={(v) => set("maxOpenPositions", v)}
-              />
-              <SliderRow
-                label="DEFAULT STOP LOSS"
-                description="Applied to new positions when agent doesn't specify"
-                value={settings.defaultStopLoss}
-                min={1}
-                max={25}
-                suffix="%"
-                color="text-terminal-red"
-                onChange={(v) => set("defaultStopLoss", v)}
-              />
-              <SliderRow
-                label="DEFAULT TAKE PROFIT"
-                description="Automatic profit target for new positions"
-                value={settings.defaultTakeProfit}
-                min={1}
-                max={50}
-                suffix="%"
-                color="text-terminal-green"
-                onChange={(v) => set("defaultTakeProfit", v)}
-              />
-              <ToggleRow
-                label="AUTO-HEDGE"
-                description="Automatically open counter-positions during high volatility"
-                value={settings.autoHedge}
-                onChange={(v) => set("autoHedge", v)}
+                onChange={(v) => setRuntime("maxOpenPositions", v)}
               />
               <div className="flex items-center justify-between gap-4 border-t border-border pt-3">
                 <div className="flex flex-col gap-0.5">
@@ -610,7 +678,7 @@ export function SettingsView() {
             <SettingsSection
               icon={Bell}
               title="NOTIFICATIONS"
-              description="Alert preferences and thresholds"
+              description="Alert preferences and thresholds (this device)"
             >
               <ToggleRow
                 label="TRADE EXECUTION ALERTS"
@@ -638,7 +706,7 @@ export function SettingsView() {
               />
               <ToggleRow
                 label="CONSENSUS ALERTS"
-                description="Notify on consensus proposal voting updates"
+                description="Notify when the swarm reaches consensus on a proposal"
                 value={settings.consensusAlerts}
                 onChange={(v) => set("consensusAlerts", v)}
               />
@@ -657,46 +725,40 @@ export function SettingsView() {
             <SettingsSection
               icon={Cpu}
               title="AGENT CONFIGURATION"
-              description="Default swarm parameters and LLM settings"
+              description="Pipeline-wide parameters enforced by the coordination layer"
             >
               <InlineSelect
                 label="DEFAULT LLM PROVIDER"
-                description="Primary model for new agents and strategies"
+                description="Pre-selected provider when creating new strategies"
                 value={settings.defaultLlm}
                 options={["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK"]}
                 onChange={(v) => set("defaultLlm", v)}
               />
               <SliderRow
                 label="CONSENSUS QUORUM"
-                description="Percentage of agents required to approve a trade"
-                value={settings.consensusQuorum}
+                description="Approval percentage the COORDINATION step requires before executing a proposal"
+                value={runtime.consensusQuorum}
                 min={30}
                 max={100}
                 suffix="%"
                 color="text-terminal-green"
-                onChange={(v) => set("consensusQuorum", v)}
+                onChange={(v) => setRuntime("consensusQuorum", v)}
               />
               <SliderRow
                 label="HEARTBEAT INTERVAL"
-                description="Agent health check frequency"
-                value={settings.heartbeatInterval}
+                description="Agents are shown offline after 3 missed heartbeats (interval × 3)"
+                value={runtime.heartbeatInterval}
                 min={5}
                 max={120}
                 suffix="s"
                 color="text-terminal-cyan"
-                onChange={(v) => set("heartbeatInterval", v)}
-              />
-              <ToggleRow
-                label="AUTO-RESTART AGENTS"
-                description="Automatically restart agents after errors"
-                value={settings.autoRestart}
-                onChange={(v) => set("autoRestart", v)}
+                onChange={(v) => setRuntime("heartbeatInterval", v)}
               />
               <ToggleRow
                 label="DEBUG MODE"
-                description="Verbose logging and raw LLM outputs in live feed"
-                value={settings.debugMode}
-                onChange={(v) => set("debugMode", v)}
+                description="Live feed appends raw pipeline detail (rejection reasons, thresholds)"
+                value={runtime.debugMode}
+                onChange={(v) => setRuntime("debugMode", v)}
               />
             </SettingsSection>
           </div>

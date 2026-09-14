@@ -7,6 +7,7 @@ import {
   Check,
   CheckCheck,
   Crosshair,
+  Network,
   ShieldCheck,
   Zap,
 } from "lucide-react";
@@ -30,6 +31,11 @@ export const CATEGORY_META: Record<
     className: "text-terminal-red",
     icon: AlertTriangle,
     label: "ALERT",
+  },
+  consensus: {
+    className: "text-terminal-gold",
+    icon: Network,
+    label: "CONSENSUS",
   },
   heartbeat: {
     className: "text-terminal-cyan",

@@ -1,7 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { type OrderResult, placeOrder } from "./execution-tool";
 import { fetchMarketQuote } from "./market-quote-tool";
 import { fetchMarketSignals } from "./market-signals-tool";
 import { evaluateProposalRiskServer } from "./risk-tool";
@@ -193,37 +192,6 @@ export const evaluateRiskTool = createTool({
     approved: z.boolean(),
     positionSizePct: z.number(),
     reason: z.string(),
-  }),
-});
-
-export const submitOrderTool = createTool({
-  description:
-    "Submit a broker order for a risk-approved proposal. Returns order id, quantity and fill status",
-  execute: async ({ asset, direction, positionSizePct, proposalId }) =>
-    placeOrder({ asset, direction, positionSizePct, proposalId }).catch(
-      (error): OrderResult => ({
-        detail: `Broker order failed: ${(error as Error).message}`,
-        orderId: `${proposalId}:o0`,
-        quantity: 0,
-        status: "FAILED",
-      }),
-    ),
-  id: "submitOrder",
-  inputSchema: z.object({
-    asset: z.string().describe("Asset symbol, e.g. BTC-USD"),
-    direction: z.enum(["LONG", "SHORT"]),
-    positionSizePct: z
-      .number()
-      .gt(0)
-      .max(100)
-      .describe("Position size as percent of book"),
-    proposalId: z.string().describe("Id of the risk-approved proposal"),
-  }),
-  outputSchema: z.object({
-    detail: z.string().optional(),
-    orderId: z.string(),
-    quantity: z.number(),
-    status: z.enum(["FILLED", "FAILED"]),
   }),
 });
 

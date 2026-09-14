@@ -1,6 +1,7 @@
 import { useLogger, withEvlog } from "@/lib/evlog";
 import { requireWriteAccess } from "@/lib/route-auth";
 import { reasoningAnalysisAgent } from "@/mastra/agents/trading-agents";
+import { parseTradeProposal } from "@/mastra/agents/trade-proposal";
 import {
   type AnalysisProposed,
   newId,
@@ -109,47 +110,26 @@ Technical context: trend ${technicals.trend}, RSI ${technicals.rsi}, regime ${te
 Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Reply as JSON: {"direction":"LONG"|"SHORT"|"ABSTAIN","confidence":number,"reasoning":string}`,
       );
 
-      let parsed: {
-        direction?: string;
-        confidence?: number;
-        reasoning?: string;
-      };
-      try {
-        parsed = JSON.parse(
-          (reasoning.text ?? "{}").replace(/```json|```/g, "").trim(),
-        ) as typeof parsed;
-      } catch {
-        parsed = {};
-      }
+      const parsed = parseTradeProposal(reasoning.text);
 
       // LLM output is untrusted: only an explicit LONG/SHORT counts.
       // ABSTAIN or unparsable output means NO proposal — the UI must not
       // receive a paper-trade suggestion the model never made.
-      const direction: "LONG" | "SHORT" | null =
-        parsed.direction === "LONG" || parsed.direction === "SHORT"
-          ? parsed.direction
-          : null;
-
-      if (direction === null) {
+      if (!parsed) {
         logger.set({
           warning: "reasoning agent abstained or returned unparsable output",
         });
         return Response.json({ proposals: [] } satisfies RunResponse);
       }
 
-      const confidence = Math.max(
-        0,
-        Math.min(1, parsed.confidence ?? signal.confidence),
-      );
-
       const proposal: AnalysisProposed = {
         agentId: "reasoning-analysis-agent",
         asset: target,
-        confidence,
+        confidence: parsed.confidence,
         createdAt: new Date().toISOString(),
-        direction,
+        direction: parsed.direction,
         proposalId: newId("prp"),
-        reasoning: parsed.reasoning ?? "Reasoning omitted by the model",
+        reasoning: parsed.reasoning,
         signalId: signal.signalId,
         type: "ANALYSIS_PROPOSED",
       };
@@ -159,8 +139,8 @@ Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Repl
         agentId: proposal.agentId,
         agentName: "Reasoning Analysis Agent",
         asset: target,
-        confidence,
-        direction,
+        confidence: parsed.confidence,
+        direction: parsed.direction,
         entryPrice: null,
         proposalId: proposal.proposalId,
         quantity: 0,

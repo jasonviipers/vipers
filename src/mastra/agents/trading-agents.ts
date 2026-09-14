@@ -4,7 +4,6 @@ import {
   evaluateRiskTool,
   fetchMarketQuoteTool,
   gatherMarketSignalsTool,
-  submitOrderTool,
 } from "../tools/trading-tools";
 import {
   coordinatorAgentConfig,
@@ -102,7 +101,9 @@ export const executionAgent = new Agent({
   `,
   model: executionAgentConfig.model,
   name: executionAgentConfig.codename ?? "Order Executor",
-  tools: { submitOrderTool },
+  // The workflow, not an LLM tool call, invokes execution after its
+  // server-owned deterministic risk gate has approved a proposal.
+  tools: {},
 });
 
 export const coordinatorAgent = new Agent({

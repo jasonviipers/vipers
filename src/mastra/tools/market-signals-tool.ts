@@ -326,10 +326,7 @@ export async function fetchMarketSignals(
     // No cache to fall back on. In production, fail closed rather than
     // trade on invented data. Outside production, degrade to a clearly
     // labeled neutral reading so local dev/test doesn't need live network.
-    if (
-      env.NODE_ENV === "production" &&
-      env.ALLOW_STUB_MARKET_DATA !== "true"
-    ) {
+    if (env.NODE_ENV === "production") {
       throw error;
     }
     return {

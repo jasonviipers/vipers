@@ -8,12 +8,14 @@
  * the portfolio jobs use), so the cap is real, not cosmetic.
  */
 
-import { and, desc, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
 import { riskControls } from "@/db/schema/risk";
+import { positions } from "@/db/schema/trading";
 import { log } from "@/lib/evlog";
+import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 export interface RiskLimits {
   /** Max realized daily loss, percent of current total capital. */
@@ -35,6 +37,10 @@ export interface RiskGateContext {
   dailyRealizedPnl: number;
   /** Current total capital, currency units (denominator for the loss cap). */
   totalCapital: number;
+  /** Currently OPEN position count (operator cap from runtime settings). */
+  openPositions: number;
+  /** Max concurrent open positions (operator setting; null = uncapped). */
+  maxOpenPositions: number | null;
 }
 
 const MIN_CONFIDENCE_FLOOR = 0.6;
@@ -89,6 +95,18 @@ export async function fetchDailyRealizedPnl(): Promise<number> {
  * dashboard equity curve also reads). Falls back to the cumulative ledger
  * net when no snapshot exists yet (fresh install).
  */
+/**
+ * Currently OPEN position count — feeds the operator's max-open-positions
+ * cap (runtime settings) in the risk gate.
+ */
+export async function fetchOpenPositionsCount(): Promise<number> {
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(positions)
+    .where(eq(positions.status, "OPEN"));
+  return rows[0]?.count ?? 0;
+}
+
 export async function fetchTotalCapital(): Promise<number> {
   const [snapshot] = await db
     .select({ totalCapital: portfolioSnapshots.totalCapital })
@@ -152,6 +170,18 @@ export function evaluateProposalRisk(
     }
   }
 
+  // 2b. Operator concurrency cap on open positions (runtime settings).
+  if (
+    context.maxOpenPositions !== null &&
+    context.openPositions >= context.maxOpenPositions
+  ) {
+    return {
+      approved: false,
+      positionSizePct: 0,
+      reason: `Open positions (${context.openPositions}) reached the operator cap of ${context.maxOpenPositions}`,
+    };
+  }
+
   // 3. Confidence floor.
   if (input.confidence < MIN_CONFIDENCE_FLOOR) {
     return {
@@ -187,14 +217,26 @@ export async function evaluateProposalRiskServer(
   limits: RiskLimits,
 ): Promise<RiskEvaluation> {
   let context: RiskGateContext;
+  let operatorMaxDailyLossPct: number;
   try {
-    const [killSwitchEnabled, dailyRealizedPnl, totalCapital] =
+    // The operator's runtime-settings daily-loss cap overrides the
+    // agent-config default when present.
+    const [runtime, killSwitchEnabled, dailyRealizedPnl, totalCapital, openPositions] =
       await Promise.all([
+        getRuntimeSettings(),
         isKillSwitchEnabled(),
         fetchDailyRealizedPnl(),
         fetchTotalCapital(),
+        fetchOpenPositionsCount(),
       ]);
-    context = { dailyRealizedPnl, killSwitchEnabled, totalCapital };
+    context = {
+      dailyRealizedPnl,
+      killSwitchEnabled,
+      maxOpenPositions: runtime.maxOpenPositions,
+      openPositions,
+      totalCapital,
+    };
+    operatorMaxDailyLossPct = runtime.maxDailyLossPct;
   } catch (error) {
     const detail = error instanceof Error ? error.message : "unknown";
     log.error(
@@ -209,5 +251,12 @@ export async function evaluateProposalRiskServer(
     };
   }
 
-  return evaluateProposalRisk(input, limits, context);
+  // Operator override: the runtime-settings daily-loss cap replaces the
+  // agent-config default (maxDailyLossPct is always > 0 in the schema).
+  const effectiveLimits: RiskLimits = {
+    ...limits,
+    maxDailyLossPct: operatorMaxDailyLossPct || limits.maxDailyLossPct,
+  };
+
+  return evaluateProposalRisk(input, effectiveLimits, context);
 }

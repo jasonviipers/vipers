@@ -216,10 +216,7 @@ export async function fetchStockTwitsSentiment(
     if (stale && stale.staleUntil > now) {
       return { ...(stale.value as StockTwitsSentiment), stale: true };
     }
-    if (
-      env.NODE_ENV === "production" &&
-      env.ALLOW_STUB_MARKET_DATA !== "true"
-    ) {
+    if (env.NODE_ENV === "production") {
       throw error;
     }
     return {
@@ -272,10 +269,7 @@ export async function fetchStockTwitsTrending(): Promise<StockTwitsTrending> {
     if (stale && stale.staleUntil > now) {
       return stale.value as StockTwitsTrending;
     }
-    if (
-      env.NODE_ENV === "production" &&
-      env.ALLOW_STUB_MARKET_DATA !== "true"
-    ) {
+    if (env.NODE_ENV === "production") {
       throw error;
     }
     return { fetchedAt: now, items: [], source: "stocktwits" };

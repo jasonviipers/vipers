@@ -18,6 +18,8 @@ function getEventColor(type: FeedEvent["category"]) {
       return "text-terminal-amber";
     case "alert":
       return "text-terminal-red";
+    case "consensus":
+      return "text-terminal-gold";
     case "heartbeat":
       return "text-terminal-cyan";
   }
@@ -31,6 +33,8 @@ function getEventPrefix(type: FeedEvent["category"]) {
       return "SIG";
     case "alert":
       return "ALT";
+    case "consensus":
+      return "CON";
     case "heartbeat":
       return "HBT";
   }

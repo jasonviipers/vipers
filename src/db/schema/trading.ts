@@ -1,5 +1,7 @@
 import {
+  boolean,
   index,
+  integer,
   numeric,
   pgEnum,
   pgTable,
@@ -12,12 +14,38 @@ import { signals } from "./signals";
 import { strategies } from "./strategies";
 
 export const directionEnum = pgEnum("direction", ["LONG", "SHORT"]);
-export const positionStatusEnum = pgEnum("position_status", ["OPEN", "CLOSED"]);
+export const positionStatusEnum = pgEnum("position_status", [
+  "OPEN",
+  "CLOSED",
+]);
 export const orderStatusEnum = pgEnum("order_status", [
+  "PENDING",
   "FILLED",
   "FAILED",
   "BLOCKED",
 ]);
+
+/**
+ * Server-owned operator settings that the trading pipeline and API routes
+ * actually enforce (singleton row, id = "global"). Written through
+ * PUT /api/settings/runtime; the localStorage-backed terminal settings stay
+ * display-only. Enforced today:
+ *  - consensusQuorum: COORDINATION vote threshold in the workflow
+ *  - maxDailyLossPct: RISK daily-loss cap (overrides the agent-config default)
+ *  - maxOpenPositions: RISK concurrency cap on open positions
+ *  - debugMode: the events feed surfaces raw pipeline detail when true
+ *  - heartbeatInterval: agent online-window (interval × 3) in fleet/feed routes
+ */
+export const runtimeSettings = pgTable("runtime_settings", {
+  consensusQuorum: integer("consensus_quorum"),
+  debugMode: boolean("debug_mode").notNull().default(false),
+  /** Seconds; drives the agent online-window (interval × 3, bounded). */
+  heartbeatInterval: integer("heartbeat_interval"),
+  id: text("id").primaryKey(),
+  maxDailyLossPct: integer("max_daily_loss_pct"),
+  maxOpenPositions: integer("max_open_positions"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
 export const positions = pgTable("positions", {
   accountId: text("account_id").notNull(), // scopes to the connected QuantEx user — see note below

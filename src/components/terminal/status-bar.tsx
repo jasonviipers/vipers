@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FlashValue } from "@/components/flash-value";
 import { useTerminalClock } from "@/hooks/use-terminal-clock";
 import { APP_NAME, APP_VERSION } from "@/lib/constant";
+import { activeTimezone } from "@/lib/date-utils";
 import { fmtDollar } from "@/lib/format";
 import { statusQueries } from "@/lib/queries/status";
 
@@ -15,6 +16,7 @@ import { statusQueries } from "@/lib/queries/status";
 export function StatusBar() {
   const { data, isError } = useQuery(statusQueries.summary());
   const { time: utcTime, date } = useTerminalClock({ intervalMs: 1000 });
+  const tz = activeTimezone();
 
   const totalCount = data?.agents.total ?? 0;
   const onlineCount = data?.agents.online ?? 0;
@@ -69,7 +71,7 @@ export function StatusBar() {
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
         <span className="hidden text-muted-foreground sm:inline">
-          {date} {utcTime} UTC
+          {date} {utcTime} {tz}
         </span>
         <span className="tracking-wider text-terminal-green">
           {APP_NAME} {APP_VERSION}

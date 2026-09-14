@@ -84,9 +84,14 @@ function useLocalMarkRead() {
 /** Settings toggle key per event category (see /settings notifications). */
 const CATEGORY_SETTING_KEY: Record<
   FeedEvent["category"],
-  "tradeAlerts" | "signalAlerts" | "riskAlerts" | "agentStatusAlerts"
+  | "consensusAlerts"
+  | "tradeAlerts"
+  | "signalAlerts"
+  | "riskAlerts"
+  | "agentStatusAlerts"
 > = {
   alert: "riskAlerts",
+  consensus: "consensusAlerts",
   heartbeat: "agentStatusAlerts",
   signal: "signalAlerts",
   trade: "tradeAlerts",

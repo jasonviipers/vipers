@@ -5,6 +5,7 @@ import {
   reasoningAnalysisAgentConfig,
   riskAgentConfig,
 } from "../agents/config";
+import { parseTradeProposal } from "../agents/trade-proposal";
 import { reasoningAnalysisAgent } from "../agents/trading-agents";
 import { publishAgentEvent } from "../events/bus";
 import {
@@ -15,6 +16,8 @@ import {
   type RiskDecision,
   type SignalCreated,
 } from "../events/contracts";
+import { getRuntimeSettings } from "@/lib/runtime-settings";
+
 import { placeOrder } from "../tools/execution-tool";
 import { fetchMarketSignals } from "../tools/market-signals-tool";
 import { evaluateProposalRiskServer } from "../tools/risk-tool";
@@ -34,6 +37,17 @@ import { fetchTechnicals } from "../tools/technical-analysis-tool";
  */
 
 const CONSENSUS_THRESHOLD = 0.5;
+
+/**
+ * Consensus quorum: the operator-configured threshold (runtime settings,
+ * PUT /api/settings/runtime) as a 0–1 fraction. An undefined/null stored
+ * value falls back to a simple majority. This makes the /settings
+ * CONSENSUS QUORUM slider a real, enforced coordination parameter.
+ */
+async function getConsensusThreshold(): Promise<number> {
+  const settings = await getRuntimeSettings();
+  return settings.consensusQuorum / 100;
+}
 
 const signalSchema = z.object({
   asset: z.string().describe("Asset symbol, e.g. BTC-USD"),
@@ -99,44 +113,26 @@ Technical context: trend ${technicals.trend}, RSI ${technicals.rsi}, regime ${te
 Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Reply as JSON: {"direction":"LONG"|"SHORT"|"ABSTAIN","confidence":number,"reasoning":string}`,
     );
 
-    let parsed: { direction?: string; confidence?: number; reasoning?: string };
-    try {
-      const text = reasoning.text ?? "{}";
-      parsed = JSON.parse(
-        text.replace(/```json|```/g, "").trim(),
-      ) as typeof parsed;
-    } catch {
-      parsed = {};
-    }
+    const parsed = parseTradeProposal(reasoning.text);
 
     // LLM output is untrusted input: only an explicit LONG/SHORT counts as
     // a direction. ABSTAIN, a missing/unparsable field, or any other value
     // means NO PROPOSAL — the pipeline ends here (no direction is invented
     // from technical context, which would turn a non-decision into a trade).
-    const direction: "LONG" | "SHORT" | null =
-      parsed.direction === "LONG" || parsed.direction === "SHORT"
-        ? parsed.direction
-        : null;
-
-    if (direction === null) {
+    if (!parsed) {
       return {
         proposal: null,
       };
     }
 
-    const confidence = Math.max(
-      0,
-      Math.min(1, parsed.confidence ?? signal.confidence),
-    );
-
     const proposal: AnalysisProposed = {
       agentId: reasoningAnalysisAgentConfig.id,
       asset,
-      confidence,
+      confidence: parsed.confidence,
       createdAt: new Date().toISOString(),
-      direction,
+      direction: parsed.direction,
       proposalId: newId("prp"),
-      reasoning: parsed.reasoning ?? "Reasoning omitted by the model",
+      reasoning: parsed.reasoning,
       signalId: signal.signalId,
       type: "ANALYSIS_PROPOSED",
     };
@@ -148,8 +144,8 @@ Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Repl
     return {
       proposal: {
         asset,
-        confidence,
-        direction,
+        confidence: parsed.confidence,
+        direction: parsed.direction,
         proposalId: proposal.proposalId,
         reasoning: proposal.reasoning,
         signalId: signal.signalId,
@@ -185,9 +181,11 @@ const consensusStep = createStep({
       return { consensus: null };
     }
 
-    // Advisory consensus: the coordinator counts analysis votes. Confidence
-    // at or above the floor counts as a vote for; below is a vote against.
-    const votesFor = proposal.confidence >= 0.5 ? 1 : 0;
+    // Advisory consensus: the coordinator counts analysis votes against the
+    // operator-configured quorum. Confidence at or above the quorum counts
+    // as a vote for; below is a vote against.
+    const threshold = await getConsensusThreshold();
+    const votesFor = proposal.confidence >= threshold ? 1 : 0;
     const votesAgainst = votesFor === 1 ? 0 : 1;
     const approved =
       votesFor / (votesFor + votesAgainst) >= CONSENSUS_THRESHOLD;

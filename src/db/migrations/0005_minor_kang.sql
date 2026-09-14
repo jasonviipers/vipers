@@ -1,0 +1,1 @@
+ALTER TABLE "runtime_settings" ADD COLUMN "heartbeat_interval" integer;

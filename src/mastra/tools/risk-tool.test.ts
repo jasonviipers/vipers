@@ -12,6 +12,8 @@ function ctx(overrides: Partial<RiskGateContext> = {}): RiskGateContext {
   return {
     dailyRealizedPnl: 0,
     killSwitchEnabled: false,
+    maxOpenPositions: null,
+    openPositions: 0,
     totalCapital: 100_000,
     ...overrides,
   };
@@ -105,6 +107,25 @@ describe("evaluateProposalRisk", () => {
       { asset: "BTC-USD", confidence: 0.9 },
       BASE_LIMITS,
       ctx({ dailyRealizedPnl: -5_000, totalCapital: 0 }),
+    );
+    expect(result.approved).toBe(true);
+  });
+
+  it("rejects when open positions reach the operator cap", () => {
+    const result = evaluateProposalRisk(
+      { asset: "BTC-USD", confidence: 0.9 },
+      BASE_LIMITS,
+      ctx({ maxOpenPositions: 10, openPositions: 10 }),
+    );
+    expect(result.approved).toBe(false);
+    expect(result.reason).toContain("operator cap");
+  });
+
+  it("approves below the open-positions cap", () => {
+    const result = evaluateProposalRisk(
+      { asset: "BTC-USD", confidence: 0.9 },
+      BASE_LIMITS,
+      ctx({ maxOpenPositions: 10, openPositions: 9 }),
     );
     expect(result.approved).toBe(true);
   });

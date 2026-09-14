@@ -291,10 +291,7 @@ export async function fetchTechnicals(
     if (stale && stale.staleUntil > now) {
       return { ...stale.snapshot, stale: true };
     }
-    if (
-      env.NODE_ENV === "production" &&
-      env.ALLOW_STUB_MARKET_DATA !== "true"
-    ) {
+    if (env.NODE_ENV === "production") {
       throw error;
     }
     return neutralSnapshot(now);

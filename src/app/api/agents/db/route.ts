@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { agentStats, agents, equitySnapshots } from "@/db/schema/agent";
 import { useLogger, withEvlog } from "@/lib/evlog";
+import { getRuntimeSettings } from "@/lib/runtime-settings";
 import { agentConfigs } from "@/mastra/agents/config";
 import { agentRuntime } from "@/mastra/runtime/agent-runtime";
 
@@ -76,6 +77,13 @@ export const GET = withEvlog(async () => {
     });
   }
 
+  // Online window scales with the operator's heartbeat-interval setting
+  // (PUT /api/settings/runtime): an agent is online if we heard a heartbeat
+  // within 3 × the configured interval (bounded to sane min/max).
+  const settings = await getRuntimeSettings();
+  const onlineWindowMs =
+    Math.min(Math.max(settings.heartbeatInterval * 3, 30), 600) * 1000;
+
   const items = agentConfigs.map((config) => {
     const dbRow = flavor.get(config.id);
     const runtime = agentRuntime.getStatus(config.id);
@@ -86,7 +94,7 @@ export const GET = withEvlog(async () => {
     const heartbeatAgeMs = lastHeartbeatAt
       ? Date.now() - new Date(lastHeartbeatAt).getTime()
       : Number.POSITIVE_INFINITY;
-    const online = heartbeatAgeMs < 90_000;
+    const online = heartbeatAgeMs < onlineWindowMs;
 
     return {
       id: config.id,
@@ -125,6 +133,8 @@ export const GET = withEvlog(async () => {
   return Response.json({
     items,
     onlineCount: items.filter((a) => a.status === "online").length,
+    /** Online-window seconds derived from the operator heartbeat setting. */
+    onlineWindowS: onlineWindowMs / 1000,
     total: items.length,
   });
 });

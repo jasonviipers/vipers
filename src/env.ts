@@ -12,10 +12,6 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
-    // In non-production without a stale cache, market signals degrade to a
-    // labeled neutral reading instead of throwing. Set "true" to allow that
-    // even in production (stub/invented data is never used live unless asked).
-    ALLOW_STUB_MARKET_DATA: z.string().optional(),
     // Live OKX broker credentials (optional). When absent, order execution
     // uses the paper-book stub so dev/tests never touch a real account.
     OKX_API_KEY: z.string().optional(),
@@ -46,7 +42,6 @@ export const env = createEnv({
     DEMO_API_KEY: process.env.DEMO_API_KEY,
     NEXT_PUBLIC_API_KEY_PREFIX: process.env.NEXT_PUBLIC_API_KEY_PREFIX,
     NODE_ENV: process.env.NODE_ENV,
-    ALLOW_STUB_MARKET_DATA: process.env.ALLOW_STUB_MARKET_DATA,
     OKX_API_KEY: process.env.OKX_API_KEY,
     OKX_SECRET: process.env.OKX_SECRET,
     OKX_PASSPHRASE: process.env.OKX_PASSPHRASE,

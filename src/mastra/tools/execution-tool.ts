@@ -65,7 +65,17 @@ export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
   const mode: "live" | "paper" = okxConfigured ? "live" : "paper";
 
   try {
-    result = okxConfigured ? await liveOrder(request) : paperResult(request);
+    result = okxConfigured
+      ? await liveOrder(request)
+      : env.NODE_ENV === "production"
+        ? {
+            detail:
+              "Order blocked: production requires configured OKX live or OKX demo credentials; no synthetic paper fill was created",
+            orderId: `${request.proposalId}:o0`,
+            quantity: 0,
+            status: "FAILED",
+          }
+        : paperResult(request);
   } catch (error) {
     // The adapter normally converts errors to FAILED, but a throw here
     // (e.g. persistence/agent resolution) must still be recorded loudly.

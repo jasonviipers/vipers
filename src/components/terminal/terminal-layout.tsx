@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { clearStoredApiKey, getStoredApiKey } from "@/lib/api-key";
+import { unlockAudio } from "@/lib/sound";
+import { loadTerminalSettings } from "@/lib/terminal-settings";
 import { AuthModal } from "./auth-modal";
 import { StatusBar } from "./status-bar";
 import { TerminalBottomNav } from "./terminal-bottom-nav";
@@ -10,9 +12,22 @@ import { TickerBar } from "./ticker-bar";
 
 export function TerminalLayout({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [compact, setCompact] = useState(false);
+  const [animations, setAnimations] = useState(true);
+  const [tickerEnabled, setTickerEnabled] = useState(true);
 
   useEffect(() => {
     setAuthenticated(getStoredApiKey() !== null);
+    // Apply display settings on mount and live on save.
+    const apply = () => {
+      const s = loadTerminalSettings();
+      setCompact(s.compactMode);
+      setAnimations(s.animationsEnabled);
+      setTickerEnabled(s.tickerBarEnabled);
+    };
+    apply();
+    window.addEventListener("viipers:settings-changed", apply);
+    return () => window.removeEventListener("viipers:settings-changed", apply);
   }, []);
 
   function handleAuthenticate() {
@@ -35,8 +50,14 @@ export function TerminalLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <TickerBar />
+    <div
+      onPointerDown={unlockAudio}
+      data-animations={animations ? "on" : "off"}
+      className={`flex h-screen flex-col overflow-hidden bg-background ${
+        compact ? "[&_span]:!text-[11px]" : ""
+      }`}
+    >
+      {tickerEnabled && <TickerBar />}
       <TerminalHeader onSignOut={handleSignOut} />
       <main id="main-content" className="flex-1 overflow-auto">
         {children}
