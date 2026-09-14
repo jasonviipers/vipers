@@ -1,4 +1,5 @@
 import { Agent } from "@mastra/core/agent";
+import { resolveActiveModel } from "@/lib/llm-model";
 import {
   analyzeTechnicalsTool,
   evaluateRiskTool,
@@ -32,7 +33,8 @@ export const sentimentAgent = new Agent({
     summarize the sentiment picture concisely. Do not propose trades and do not
     size positions; your job ends at a faithful signal description.
   `,
-  model: sentimentAgentConfig.model,
+  // Resolved per call from the operator's DEFAULT LLM PROVIDER setting.
+  model: () => resolveActiveModel(),
   name: sentimentAgentConfig.codename ?? "Sentiment",
   tools: { gatherMarketSignalsTool },
 });
@@ -48,7 +50,7 @@ export const technicalAnalysisAgent = new Agent({
 
     Report trend, regime and notable patterns. Do not submit orders.
   `,
-  model: technicalAnalysisAgentConfig.model,
+  model: () => resolveActiveModel(),
   name: technicalAnalysisAgentConfig.codename ?? "Technical Analysis",
   tools: { analyzeTechnicalsTool },
 });
@@ -64,7 +66,7 @@ export const reasoningAnalysisAgent = new Agent({
 
     Be conservative: when signals conflict, lower confidence or abstain.
   `,
-  model: reasoningAnalysisAgentConfig.model,
+  model: () => resolveActiveModel(),
   name: reasoningAnalysisAgentConfig.codename ?? "Reasoning Analysis",
   tools: { fetchMarketQuoteTool },
 });
@@ -84,7 +86,7 @@ export const riskAgent = new Agent({
     Approval is binary and non-negotiable. If any limit is violated, reject
     with the specific reason.
   `,
-  model: riskAgentConfig.model,
+  model: () => resolveActiveModel(),
   name: riskAgentConfig.codename ?? "Risk",
   tools: { evaluateRiskTool, fetchMarketQuoteTool },
 });
@@ -99,7 +101,7 @@ export const executionAgent = new Agent({
     Responsibility: broker orders, fills, retries, reconciliation and order
     lifecycle. Report submitted, filled or failed status with the order id.
   `,
-  model: executionAgentConfig.model,
+  model: () => resolveActiveModel(),
   name: executionAgentConfig.codename ?? "Order Executor",
   // The workflow, not an LLM tool call, invokes execution after its
   // server-owned deterministic risk gate has approved a proposal.
@@ -116,7 +118,7 @@ export const coordinatorAgent = new Agent({
     and you never approve risk; you orchestrate the flow and decide when a
     consensus has formed or when a signal should be dropped.
   `,
-  model: coordinatorAgentConfig.model,
+  model: () => resolveActiveModel(),
   name: coordinatorAgentConfig.codename ?? "Orchestrator",
   tools: {},
 });

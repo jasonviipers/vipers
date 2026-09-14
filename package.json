@@ -15,7 +15,11 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.53",
+    "@ai-sdk/deepseek": "^3.0.44",
     "@ai-sdk/google": "^4.0.69",
+    "@ai-sdk/openai": "^4.0.66",
+    "@ai-sdk/xai": "^4.0.58",
     "@base-ui/react": "^1.8.0",
     "@mastra/core": "^1.66.0",
     "@mastra/next": "^0.2.24",

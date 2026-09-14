@@ -1,6 +1,6 @@
 {
-  "id": "ba23f8fd-3bb2-48d6-b12a-5c5dce6fe0b3",
-  "prevId": "022db73a-16c8-4452-9fdc-c7874a0eed02",
+  "id": "5b3b4de8-5a08-4fb2-9a02-7a364415d0b9",
+  "prevId": "298292bc-ff4b-46c0-93ca-d541522f40ff",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1270,6 +1270,102 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.broker_credentials": {
+      "name": "broker_credentials",
+      "schema": "",
+      "columns": {
+        "api_key_cipher": {
+          "name": "api_key_cipher",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'demo'"
+        },
+        "passphrase_cipher": {
+          "name": "passphrase_cipher",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'default'"
+        },
+        "secret_cipher": {
+          "name": "secret_cipher",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.llm_credentials": {
+      "name": "llm_credentials",
+      "schema": "",
+      "columns": {
+        "api_key_cipher": {
+          "name": "api_key_cipher",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.market_prices": {
       "name": "market_prices",
       "schema": "",
@@ -1572,6 +1668,12 @@
       "name": "runtime_settings",
       "schema": "",
       "columns": {
+        "default_llm_provider": {
+          "name": "default_llm_provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "consensus_quorum": {
           "name": "consensus_quorum",
           "type": "integer",
@@ -1752,7 +1854,7 @@
     "public.order_status": {
       "name": "order_status",
       "schema": "public",
-      "values": ["FILLED", "FAILED", "BLOCKED"]
+      "values": ["PENDING", "FILLED", "FAILED", "BLOCKED"]
     },
     "public.position_status": {
       "name": "position_status",

@@ -14,10 +14,7 @@ import { signals } from "./signals";
 import { strategies } from "./strategies";
 
 export const directionEnum = pgEnum("direction", ["LONG", "SHORT"]);
-export const positionStatusEnum = pgEnum("position_status", [
-  "OPEN",
-  "CLOSED",
-]);
+export const positionStatusEnum = pgEnum("position_status", ["OPEN", "CLOSED"]);
 export const orderStatusEnum = pgEnum("order_status", [
   "PENDING",
   "FILLED",
@@ -37,6 +34,8 @@ export const orderStatusEnum = pgEnum("order_status", [
  *  - heartbeatInterval: agent online-window (interval × 3) in fleet/feed routes
  */
 export const runtimeSettings = pgTable("runtime_settings", {
+  /** Default LLM provider for new strategies ("OPENAI"|"ANTHROPIC"|"GOOGLE"|"XAI"|"DEEPSEEK"). */
+  defaultLlmProvider: text("default_llm_provider"),
   consensusQuorum: integer("consensus_quorum"),
   debugMode: boolean("debug_mode").notNull().default(false),
   /** Seconds; drives the agent online-window (interval × 3, bounded). */
@@ -44,6 +43,39 @@ export const runtimeSettings = pgTable("runtime_settings", {
   id: text("id").primaryKey(),
   maxDailyLossPct: integer("max_daily_loss_pct"),
   maxOpenPositions: integer("max_open_positions"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
+ * Broker credentials entered in the /settings UI and stored SERVER-SIDE,
+ * encrypted at rest (AES-256-GCM via secret-box). Replaces the old
+ * OKX_* environment variables. Singleton rows keyed by broker id
+ * ("okx" today); deleting the row disconnects the broker.
+ *
+ * `mode` picks the OKX paper endpoints (demo) vs real capital;
+ * `region` picks the REST/WS domains. Plaintext never leaves the server
+ * — only masked hints and booleans are ever returned to the client.
+ */
+export const brokerCredentials = pgTable("broker_credentials", {
+  apiKeyCipher: text("api_key_cipher").notNull(),
+  id: text("id").primaryKey(), // broker id, e.g. "okx"
+  mode: text("mode").notNull().default("demo"), // "demo" | "live"
+  passphraseCipher: text("passphrase_cipher").notNull(),
+  region: text("region").notNull().default("default"), // "default" | "eea" | "us"
+  secretCipher: text("secret_cipher").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
+ * LLM provider API keys managed through the /settings UI, encrypted at
+ * rest (secret-box). One row per provider id ("OPENAI", "ANTHROPIC",
+ * "GOOGLE", "XAI", "DEEPSEEK"). Keys entered here override the
+ * corresponding environment variables at model-resolution time.
+ */
+export const llmCredentials = pgTable("llm_credentials", {
+  apiKeyCipher: text("api_key_cipher").notNull(),
+  id: text("id").primaryKey(), // provider id, e.g. "OPENAI"
+  label: text("label"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

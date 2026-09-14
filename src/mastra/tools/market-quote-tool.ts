@@ -9,12 +9,16 @@
  * when REDIS_URL is configured. A dead Redis degrades to L1-only.
  */
 import { cacheGetJson, cacheSetJson } from "@/lib/redis";
+import { z } from "zod";
+
 export interface MarketQuote {
   asset: string;
   change: number;
   changePct: number;
+  fetchedAt: number;
   price: number;
   source: "coingecko" | "yahoo";
+  stale?: boolean;
   volume: string;
 }
 
@@ -26,9 +30,13 @@ const cryptoIds: Record<string, string> = {
   XRP: "ripple",
 };
 
-const cache = new Map<string, { expires: number; quote: MarketQuote }>();
+const cache = new Map<
+  string,
+  { expires: number; quote: MarketQuote; staleUntil: number }
+>();
 const TTL_MS = 20_000;
 const TTL_SECONDS = 20;
+const STALE_TTL_MS = 60_000;
 
 /** Fresh quote from either layer; null on miss. */
 async function readCache(key: string): Promise<MarketQuote | null> {
@@ -39,7 +47,11 @@ async function readCache(key: string): Promise<MarketQuote | null> {
   const shared = await cacheGetJson<MarketQuote>(`quote:${key}`);
   if (shared) {
     // Repopulate L1 so subsequent reads skip the network hop.
-    cache.set(key, { expires: Date.now() + TTL_MS, quote: shared });
+    cache.set(key, {
+      expires: Date.now() + TTL_MS,
+      quote: shared,
+      staleUntil: Date.now() + STALE_TTL_MS,
+    });
     return shared;
   }
   return null;
@@ -48,32 +60,59 @@ async function readCache(key: string): Promise<MarketQuote | null> {
 /** Last known quote from either layer, even if past its TTL. */
 async function readStaleCache(key: string): Promise<MarketQuote | null> {
   const mem = cache.get(key);
-  if (mem) {
-    return mem.quote;
+  if (mem && mem.staleUntil > Date.now()) {
+    return { ...mem.quote, stale: true };
   }
-  return cacheGetJson<MarketQuote>(`quote:${key}`);
+  return null;
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+async function fetchJson<T>(url: string, schema: z.ZodType<T>): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new Error(`Market data request failed: ${response.status}`);
   }
-  return response.json() as Promise<T>;
+  return schema.parse(await response.json());
 }
+
+const coinGeckoSchema = z.record(
+  z.string(),
+  z.object({
+    usd: z.number().finite().positive(),
+    usd_24h_change: z.number().finite().optional(),
+    usd_24h_vol: z.number().finite().nonnegative().optional(),
+  }),
+);
+
+const yahooChartSchema = z.object({
+  chart: z.object({
+    result: z
+      .array(
+        z.object({
+          meta: z.object({
+            chartPreviousClose: z.number().finite().optional(),
+            regularMarketPrice: z.number().finite().positive().optional(),
+          }),
+        }),
+      )
+      .optional(),
+  }),
+});
 
 async function fetchCrypto(asset: string): Promise<MarketQuote> {
   const id = cryptoIds[asset];
   if (!id) {
     throw new Error(`Unsupported crypto asset: ${asset}`);
   }
-  const data = await fetchJson<
-    Record<
-      string,
-      { usd: number; usd_24h_change?: number; usd_24h_vol?: number }
-    >
-  >(
+  const data = await fetchJson(
     `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_vol=true&include_24hr_change=true`,
+    coinGeckoSchema,
   );
   const quote = data[id];
   if (!quote) {
@@ -85,6 +124,7 @@ async function fetchCrypto(asset: string): Promise<MarketQuote> {
     asset,
     change,
     changePct: pct,
+    fetchedAt: Date.now(),
     price: quote.usd,
     source: "coingecko",
     volume: formatVolume(quote.usd_24h_vol ?? 0),
@@ -92,14 +132,9 @@ async function fetchCrypto(asset: string): Promise<MarketQuote> {
 }
 
 async function fetchEquity(asset: string): Promise<MarketQuote> {
-  const data = await fetchJson<{
-    chart: {
-      result?: Array<{
-        meta: { regularMarketPrice?: number; chartPreviousClose?: number };
-      }>;
-    };
-  }>(
+  const data = await fetchJson(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(asset)}?range=2d&interval=1d`,
+    yahooChartSchema,
   );
   const meta = data.chart.result?.[0]?.meta;
   if (!meta?.regularMarketPrice) {
@@ -111,6 +146,7 @@ async function fetchEquity(asset: string): Promise<MarketQuote> {
     asset,
     change,
     changePct: previous ? (change / previous) * 100 : 0,
+    fetchedAt: Date.now(),
     price: meta.regularMarketPrice,
     source: "yahoo",
     volume: "LIVE",
@@ -137,7 +173,11 @@ export async function fetchMarketQuote(asset: string): Promise<MarketQuote> {
 
   try {
     const quote = await (cryptoIds[key] ? fetchCrypto(key) : fetchEquity(key));
-    cache.set(key, { expires: Date.now() + TTL_MS, quote });
+    cache.set(key, {
+      expires: Date.now() + TTL_MS,
+      quote,
+      staleUntil: Date.now() + STALE_TTL_MS,
+    });
     // Write-through to the shared layer; failure is a no-op.
     await cacheSetJson(`quote:${key}`, quote, TTL_SECONDS);
     return quote;

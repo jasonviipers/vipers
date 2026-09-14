@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { agents } from "@/db/schema/agent";
@@ -57,6 +57,81 @@ export interface PersistedOrderOutcome {
   result: OrderResult;
 }
 
+export interface OrderReservation {
+  duplicate: boolean;
+  result?: OrderResult;
+}
+
+/**
+ * Claim a proposal's idempotency key before contacting a broker. A duplicate
+ * or unresolved earlier submission must never result in a second broker call.
+ */
+export async function reserveOrderSubmission(
+  request: OrderRequest,
+  mode: "live" | "paper",
+): Promise<OrderReservation> {
+  const agentId = await resolveExecutionAgentId("order-executor-agent");
+  const inserted = await db
+    .insert(orders)
+    .values({
+      agentId,
+      asset: request.asset,
+      detail: "Order submission reserved; awaiting broker outcome",
+      direction: request.direction,
+      mode,
+      positionSizePct: request.positionSizePct.toString(),
+      proposalId: request.proposalId,
+      quantity: "0",
+      status: "PENDING",
+    })
+    .onConflictDoNothing({ target: orders.proposalId })
+    .returning({ id: orders.id });
+
+  if (inserted.length > 0) {
+    return { duplicate: false };
+  }
+
+  const [existing] = await db
+    .select({
+      detail: orders.detail,
+      orderId: orders.brokerOrderId,
+      quantity: orders.quantity,
+      status: orders.status,
+    })
+    .from(orders)
+    .where(eq(orders.proposalId, request.proposalId))
+    .limit(1);
+
+  log.info({
+    action: "duplicate_suppressed",
+    job: "order-persistence",
+    proposalId: request.proposalId,
+  });
+
+  if (existing?.status === "PENDING") {
+    return {
+      duplicate: true,
+      result: {
+        detail:
+          "Existing submission is unresolved; broker reconciliation is required before retrying this proposal",
+        orderId: existing.orderId ?? `${request.proposalId}:o0`,
+        quantity: Number(existing.quantity),
+        status: "PENDING",
+      },
+    };
+  }
+
+  return {
+    duplicate: true,
+    result: {
+      detail: existing?.detail ?? "duplicate proposal (already recorded)",
+      orderId: existing?.orderId ?? `${request.proposalId}:o0`,
+      quantity: Number(existing?.quantity ?? 0),
+      status: existing?.status === "FILLED" ? "FILLED" : "FAILED",
+    },
+  };
+}
+
 /**
  * Record an order outcome durably and open a position on a real fill.
  * Safe to call multiple times for the same proposalId.
@@ -66,29 +141,24 @@ export async function recordOrderOutcome(
   result: OrderResult,
   mode: "live" | "paper",
 ): Promise<PersistedOrderOutcome> {
-  const agentId = await resolveExecutionAgentId("order-executor-agent");
-
-  const inserted = await db
-    .insert(orders)
-    .values({
-      agentId,
-      asset: request.asset,
+  const finalized = await db
+    .update(orders)
+    .set({
       brokerOrderId: result.orderId || null,
       detail: result.detail ?? null,
-      direction: request.direction,
       mode,
-      positionSizePct: request.positionSizePct.toString(),
-      proposalId: request.proposalId,
       quantity: result.quantity.toString(),
       status: result.status,
     })
-    .onConflictDoNothing({ target: orders.proposalId })
+    .where(
+      and(
+        eq(orders.proposalId, request.proposalId),
+        eq(orders.status, "PENDING"),
+      ),
+    )
     .returning({ id: orders.id });
 
-  if (inserted.length === 0) {
-    // Unique constraint hit: this proposal was already submitted (retry
-    // after crash, duplicate event, double-run). Return the original
-    // outcome instead of creating a second order.
+  if (finalized.length === 0) {
     const [existing] = await db
       .select({
         detail: orders.detail,

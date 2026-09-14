@@ -14,11 +14,14 @@
  * replaces the old in-memory Map, which did not survive restarts.
  */
 
-import { env } from "@/env";
+import { getBrokerCredentials } from "@/lib/broker-credentials";
 import { log } from "@/lib/evlog";
 
 import { placeMarketOrder } from "../broker/okx-broker";
-import { recordOrderOutcome } from "./order-persistence";
+import {
+  recordOrderOutcome,
+  reserveOrderSubmission,
+} from "./order-persistence";
 
 export interface OrderRequest {
   asset: string;
@@ -31,14 +34,11 @@ export interface OrderResult {
   detail?: string;
   orderId: string;
   quantity: number;
-  status: "FILLED" | "FAILED";
+  /** PENDING means a broker result requires durable reconciliation. */
+  status: "FILLED" | "FAILED" | "PENDING";
 }
 
 const NOTIONAL_BOOK = 100_000;
-
-const okxConfigured = Boolean(
-  env.OKX_API_KEY && env.OKX_SECRET && env.OKX_PASSPHRASE,
-);
 
 function paperResult(request: OrderRequest): OrderResult {
   const quantity = Number(
@@ -62,12 +62,41 @@ function paperResult(request: OrderRequest): OrderResult {
 
 export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
   let result: OrderResult;
-  const mode: "live" | "paper" = okxConfigured ? "live" : "paper";
+  const credentials = await getBrokerCredentials("okx");
+  const okxConfigured = credentials !== null;
+  const mode: "live" | "paper" =
+    credentials?.mode === "live" ? "live" : "paper";
+
+  try {
+    const reservation = await reserveOrderSubmission(request, mode);
+    if (reservation.duplicate) {
+      return (
+        reservation.result ?? {
+          detail: "duplicate proposal (already reserved)",
+          orderId: `${request.proposalId}:o0`,
+          quantity: 0,
+          status: "FAILED",
+        }
+      );
+    }
+  } catch (error) {
+    log.error(
+      error instanceof Error
+        ? error
+        : new Error("order reservation failed before broker submission"),
+    );
+    return {
+      detail: "Order blocked: unable to reserve its idempotency key",
+      orderId: `${request.proposalId}:o0`,
+      quantity: 0,
+      status: "FAILED",
+    };
+  }
 
   try {
     result = okxConfigured
       ? await liveOrder(request)
-      : env.NODE_ENV === "production"
+      : process.env.NODE_ENV === "production"
         ? {
             detail:
               "Order blocked: production requires configured OKX live or OKX demo credentials; no synthetic paper fill was created",
@@ -100,7 +129,12 @@ export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
         ? error
         : new Error("order persistence failed after submission"),
     );
-    return result;
+    return {
+      detail: `Broker result requires reconciliation: ${result.detail ?? "no detail"}`,
+      orderId: result.orderId,
+      quantity: result.quantity,
+      status: "PENDING",
+    };
   }
 }
 

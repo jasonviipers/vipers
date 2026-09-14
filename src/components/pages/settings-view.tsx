@@ -615,6 +615,11 @@ export function SettingsView() {
                     SERVER UNREACHABLE — showing defaults
                   </span>
                 )}
+                {runtimeError && (
+                  <span className="text-[10px] font-bold text-terminal-red">
+                    {runtimeError}
+                  </span>
+                )}
               </div>
               <SliderRow
                 label="MAX OPEN POSITIONS"

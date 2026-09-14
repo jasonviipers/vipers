@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { agents } from "@/db/schema/agent";
 import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
 import { positions } from "@/db/schema/trading";
-import { env } from "@/env";
+import { getBrokerCredentials } from "@/lib/broker-credentials";
 import { useLogger, withEvlog } from "@/lib/evlog";
 
 export const dynamic = "force-dynamic";
@@ -125,17 +125,24 @@ export const GET = withEvlog(async () => {
     });
   }
 
-  // Mirrors the execution tool's routing rule: OKX credentials present ->
-  // live broker (demo flag shown), otherwise the paper-book stub.
-  const okxConfigured = Boolean(
-    env.OKX_API_KEY && env.OKX_SECRET && env.OKX_PASSPHRASE,
-  );
-  const broker = okxConfigured
-    ? {
-        shortName: env.OKX_DEMO === "true" ? "OKX DEMO" : "OKX",
-        status: "connected" as const,
-      }
-    : { shortName: "PAPER BOOK", status: "paper" as const };
+  // Mirrors the execution tool's routing rule: stored OKX credentials
+  // (UI-managed, encrypted) -> live broker (demo flag shown), otherwise
+  // the paper-book stub.
+  let broker: { shortName: string; status: "connected" | "paper" } = {
+    shortName: "PAPER BOOK",
+    status: "paper",
+  };
+  try {
+    const stored = await getBrokerCredentials("okx");
+    if (stored) {
+      broker = {
+        shortName: stored.mode === "live" ? "OKX" : "OKX DEMO",
+        status: "connected",
+      };
+    }
+  } catch {
+    // DB hiccup: keep the paper-book default instead of failing the payload.
+  }
 
   return Response.json({
     agents: { online: agentOnline, total: agentTotal },

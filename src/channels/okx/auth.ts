@@ -9,32 +9,37 @@ import { createOKXConfig } from "./config";
  * encoded with HMAC SHA256 and base64-encoded. All private endpoints require
  * four headers: OK-ACCESS-KEY, OK-ACCESS-SIGN, OK-ACCESS-TIMESTAMP,
  * OK-ACCESS-PASSPHRASE.
+ *
+ * Credentials come from the server-side store (DB, written via the
+ * /settings UI), so these helpers are async — each call resolves the
+ * current stored config (30s TTL cache in the credential store).
  */
 
 export function timestampMs(): string {
   return new Date().toISOString();
 }
 
-export function sign(
+export async function sign(
   timestamp: string,
   method: string,
   requestPath: string,
   body: string,
-): string {
+): Promise<string> {
+  const config = await createOKXConfig();
   const message = `${timestamp}${method.toUpperCase()}${requestPath}${body}`;
-  return createHmac("sha256", createOKXConfig().secretKey)
+  return createHmac("sha256", config.secretKey)
     .update(message)
     .digest("base64");
 }
 
-export function authHeaders(
+export async function authHeaders(
   method: string,
   requestPath: string,
   body = "",
-): Record<string, string> {
-  const config = createOKXConfig();
+): Promise<Record<string, string>> {
+  const config = await createOKXConfig();
   const ts = timestampMs();
-  const signature = sign(ts, method, requestPath, body);
+  const signature = await sign(ts, method, requestPath, body);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -55,8 +60,8 @@ export function authHeaders(
  * WebSocket login signature uses a different pre-hash string:
  * timestamp + "GET" + "/users/self/verify"
  */
-export function wsSign(timestamp: string): string {
-  const config = createOKXConfig();
+export async function wsSign(timestamp: string): Promise<string> {
+  const config = await createOKXConfig();
   const message = `${timestamp}GET/users/self/verify`;
   return createHmac("sha256", config.secretKey)
     .update(message)

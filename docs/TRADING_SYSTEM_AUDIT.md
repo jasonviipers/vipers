@@ -5,9 +5,9 @@ Marking convention: `[ ]` not started, `[~]` partial or in progress, `[x]` verif
 ## Executive status
 
 - [~] Repository architecture inspected against `README.md` and the live source tree.
-- [ ] Production build succeeds (`bun run build`).
-- [ ] TypeScript passes (`bunx tsc --noEmit`).
-- [ ] Lint passes (`bun run lint`).
+- [x] Production build succeeds (`bun run build`, 2026-09-14; network access was required for Google Fonts).
+- [x] TypeScript passes (`bunx tsc --noEmit`, 2026-09-14).
+- [x] Lint passes (`bun run lint`, 2026-09-14).
 - [~] Automated tests exist only for technical-analysis and risk tools; no project test script, integration suite, or E2E suite is currently configured.
 - [~] Database schemas and migrations inspected; migration application requires a PostgreSQL instance.
 - [~] Production safety hardening in progress. Do not treat this system as production-ready while any critical item below remains open.
@@ -17,18 +17,18 @@ Marking convention: `[ ]` not started, `[~]` partial or in progress, `[x]` verif
 - [x] Five-stage flow traced in `src/mastra/workflows/consensus-workflow.ts`: sentiment → analysis → advisory consensus → deterministic risk gate → execution.
 - [x] Typed event contracts and runtime bus inspected in `src/mastra/events/` and `src/mastra/runtime/agent-runtime.ts`.
 - [~] Risk gate is present and fails closed when ledger/settings reads fail (`src/mastra/tools/risk-tool.ts`), but order reservation/concurrency needs hardening.
-- [ ] **Critical:** Prevent public Mastra endpoints from starting agent runs without API-key authorization (`src/app/api/ai/[...mastra]/route.ts`).
-- [ ] **Critical:** Remove all LLM-reachable paths that can submit orders without a workflow-owned, deterministic `RISK_APPROVED` decision (`src/mastra/agents/trading-agents.ts`, `src/mastra/tools/trading-tools.ts`).
+- [~] Mastra endpoints now require API-key authentication for reads and write access for all other methods (`src/app/api/ai/[...mastra]/route.ts`); route-level integration coverage is still needed.
+- [x] No LLM-reachable order-submission tool remains. The workflow is the only in-repository caller of `placeOrder` (`src/mastra/agents/trading-agents.ts`, `src/mastra/tools/trading-tools.ts`, `src/mastra/workflows/consensus-workflow.ts`; source search, 2026-09-14).
 
 ## Trading, execution, and risk
 
 - [x] Asset allowlist is enforced by the live broker adapter for supported OKX spot majors (`src/channels/broker/adapter.ts`).
 - [x] Kill switch, daily realized-loss cap, confidence floor, maximum position percentage, and maximum open-position cap are applied by the server risk gate (`src/mastra/tools/risk-tool.ts`).
-- [ ] **Critical:** Reserve an idempotency key before calling the broker. The current persistence occurs after broker submission, so concurrent requests for one proposal can both submit.
+- [~] Order idempotency is reserved with a durable `PENDING` row before broker submission (`src/mastra/tools/order-persistence.ts`); migration `0006_neat_doctor_doom.sql` must be applied and tested against PostgreSQL.
 - [ ] Make order/position persistence atomic and preserve an explicit unresolved outcome for post-submission database failures.
 - [~] Live orders use a deterministic OKX `clOrdId` and poll terminal state, but stale/unconfirmed orders require a reconciliation worker.
 - [ ] Replace the hard-coded `NOTIONAL_BOOK = 100_000` paper fill stub with a real, explicitly configured paper ledger, or fail closed where a simulated broker is not configured.
-- [ ] Prevent any configuration from allowing invented market/sentiment/technical data in production.
+- [~] Production now rejects failed market/sentiment/technical fetches instead of honoring `ALLOW_STUB_MARKET_DATA`; compile and unit verification pass, but production failure-path integration coverage is still needed.
 - [ ] Validate external market-data, sentiment, and OKX response schemas and apply request timeouts before use.
 - [ ] Enforce quote staleness limits before an execution decision; stale cache reads must not reach risk/execution.
 - [?] Verify live OKX connectivity, fills, cancellation, partial-fill behavior, and reconciliation with dedicated demo/live credentials.
@@ -53,8 +53,7 @@ Marking convention: `[ ]` not started, `[~]` partial or in progress, `[x]` verif
 ## Agents and AI
 
 - [x] Six Mastra agents and their tool bindings reviewed (`src/mastra/agents/`).
-- [~] Analysis parses LLM JSON but does not validate its shape with Zod before coercing values; malformed confidence/reasoning must be rejected rather than normalized.
-- [ ] Centralize and schema-validate all LLM trade-proposal parsing for workflow and manual analysis runs.
+- [x] Workflow and manual analysis now share strict Zod parsing; malformed, incomplete, ABSTAIN, and coercible model output is rejected (`src/mastra/agents/trade-proposal.ts`, `trade-proposal.test.ts`; 3 focused tests pass, 2026-09-14).
 - [x] Consensus is advisory in the workflow; risk is the intended final authority.
 - [ ] Verify configured `maxConcurrency`/`timeoutMs` are actually enforced by the Mastra runtime; current config appears descriptive.
 
@@ -63,7 +62,7 @@ Marking convention: `[ ]` not started, `[~]` partial or in progress, `[x]` verif
 - [x] Structured evlog integration and typed pipeline events are present.
 - [~] Critical trading failures are often logged, but no durable reconciliation/alerting path exists for uncertain post-submit outcomes.
 - [ ] Verify scheduled jobs, retry limits, graceful shutdown, and health checks.
-- [ ] Add unit tests for LLM output validation, route authorization, execution reservation/idempotency, and fail-closed production data paths.
+- [~] Unit tests cover LLM output validation, risk rules, and technical analysis (24 passing assertions/tests in 3 files, 2026-09-14); route authorization, database reservation, and production failure-path coverage remain.
 - [ ] Add integration and E2E coverage for risk approval → order reservation → execution → persistence.
 
 ## Remaining infrastructure-dependent verification
@@ -72,4 +71,3 @@ Marking convention: `[ ]` not started, `[~]` partial or in progress, `[x]` verif
 - [?] Google model calls and provider timeout/failure behavior: requires valid provider credentials.
 - [?] Redis behavior under outage: requires Redis.
 - [?] OKX demo/live behavior: requires exchange credentials and controlled account access.
-

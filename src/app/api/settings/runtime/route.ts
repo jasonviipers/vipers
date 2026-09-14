@@ -1,4 +1,5 @@
 import { useLogger, withEvlog } from "@/lib/evlog";
+import { invalidateActiveProviderCache } from "@/lib/llm-model";
 import { requireWriteAccess } from "@/lib/route-auth";
 import {
   getRuntimeSettings,
@@ -52,6 +53,13 @@ export const PUT = withEvlog(async (request: Request) => {
   }
 
   const settings = await updateRuntimeSettings(parsed.data);
-  logger.set({ audit: "runtime_settings_updated", keys: Object.keys(parsed.data) });
+  // A provider switch must reach agent model resolution immediately.
+  if (parsed.data.defaultLlmProvider) {
+    invalidateActiveProviderCache();
+  }
+  logger.set({
+    audit: "runtime_settings_updated",
+    keys: Object.keys(parsed.data),
+  });
   return Response.json(settings);
 });

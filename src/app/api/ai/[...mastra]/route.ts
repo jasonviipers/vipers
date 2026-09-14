@@ -9,6 +9,9 @@ const handlers = createNextRouteHandler({ mastra, prefix: "/api/ai" });
 
 function wrap(handler: (request: NextRequest) => Response | Promise<Response>) {
   return withEvlog(async (request: NextRequest) => {
+    await identifyEvlogUser(request); // attaches user to the wide event
+    useLogger().set({ integration: "mastra" });
+
     const auth =
       request.method === "GET" || request.method === "HEAD"
         ? authenticate(request)
@@ -16,8 +19,6 @@ function wrap(handler: (request: NextRequest) => Response | Promise<Response>) {
     if (!auth.ok) {
       return auth.response;
     }
-    await identifyEvlogUser(request); // attaches user to the wide event
-    useLogger().set({ integration: "mastra" });
     return handler(request);
   });
 }

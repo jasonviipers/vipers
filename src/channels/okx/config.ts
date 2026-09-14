@@ -1,8 +1,11 @@
-import { env } from "@/env";
+import { getBrokerCredentials } from "@/lib/broker-credentials";
+
 import type { OKXConfig } from "./types";
 
 /**
- * Build OKX configuration from environment variables.
+ * Build OKX configuration from the server-side credential store
+ * (broker_credentials table, written by the /settings UI — see
+ * PUT /api/broker/credentials).
  *
  * Region determines the REST + WebSocket domains per OKX's regional
  * requirements:
@@ -10,9 +13,13 @@ import type { OKXConfig } from "./types";
  *   - "eea"     → eea.okx.com      / wseea.okx.com (EU, my.okx.com accounts)
  *   - "us"      → us.okx.com       / wsus.okx.com  (US & AU, app.okx.com accounts)
  *
- * Demo trading (OKX_DEMO=true) ignores region and uses the paper endpoints
- * (openapi.okx.com + wspap.okx.com) with the `x-simulated-trading: 1` header
- * added by {@link authHeaders}. Demo keys never touch real funds.
+ * Demo mode ignores region and uses the paper endpoints
+ * (openapi.okx.com + wspap.okx.com) with the `x-simulated-trading: 1`
+ * header added by {@link authHeaders}. Demo keys never touch real funds.
+ *
+ * When no credentials are stored the functions throw — callers (execution
+ * tool) must check isBrokerConfigured() first and fall back to the paper
+ * stub.
  */
 
 const REGION_ENDPOINTS = {
@@ -35,47 +42,44 @@ const DEMO_ENDPOINTS = {
   ws: "wss://wspap.okx.com:8443/ws/v5",
 } as const;
 
-export function requireOKXCredentials(): {
+export const OKX_BROKER_ID = "okx";
+
+export async function getOKXCredentials(): Promise<{
   apiKey: string;
   passphrase: string;
   secretKey: string;
-} {
-  const { OKX_API_KEY, OKX_PASSPHRASE, OKX_SECRET } = env;
-  const missing = [
-    !OKX_API_KEY && "OKX_API_KEY",
-    !OKX_PASSPHRASE && "OKX_PASSPHRASE",
-    !OKX_SECRET && "OKX_SECRET",
-  ].filter(Boolean);
-  if (missing.length > 0) {
+}> {
+  const creds = await getBrokerCredentials(OKX_BROKER_ID);
+  if (!creds) {
     throw new Error(
-      `OKX is not configured: missing ${missing.join(", ")}. ` +
-        "Set these environment variables or leave OKX credentials unset to keep using the paper stub.",
+      "OKX is not configured: no credentials stored. " +
+        "Add them in /settings → BROKER ACCOUNTS, or keep the broker unset to use the paper stub.",
     );
   }
   return {
-    apiKey: OKX_API_KEY as string,
-    passphrase: OKX_PASSPHRASE as string,
-    secretKey: OKX_SECRET as string,
+    apiKey: creds.apiKey,
+    passphrase: creds.passphrase,
+    secretKey: creds.secret,
   };
 }
 
-export function createOKXConfig(): OKXConfig {
-  const credentials = requireOKXCredentials();
-  const simulated = env.OKX_DEMO === "true";
-  if (simulated) {
+export async function createOKXConfig(): Promise<OKXConfig> {
+  const credentials = await getOKXCredentials();
+  const stored = await getBrokerCredentials(OKX_BROKER_ID);
+  if (stored?.mode === "live") {
+    const endpoints =
+      REGION_ENDPOINTS[stored.region] ?? REGION_ENDPOINTS.default;
     return {
       ...credentials,
-      restBaseUrl: DEMO_ENDPOINTS.rest,
-      simulated: true,
-      wsBaseUrl: DEMO_ENDPOINTS.ws,
+      restBaseUrl: endpoints.rest,
+      simulated: false,
+      wsBaseUrl: endpoints.ws,
     };
   }
-  const region = env.OKX_REGION ?? "default";
-  const endpoints = REGION_ENDPOINTS[region] ?? REGION_ENDPOINTS.default;
   return {
     ...credentials,
-    restBaseUrl: endpoints.rest,
-    simulated: false,
-    wsBaseUrl: endpoints.ws,
+    restBaseUrl: DEMO_ENDPOINTS.rest,
+    simulated: true,
+    wsBaseUrl: DEMO_ENDPOINTS.ws,
   };
 }

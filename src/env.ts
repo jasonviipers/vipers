@@ -5,20 +5,23 @@ export const env = createEnv({
   server: {
     DATABASE_URL: z.url(),
     MASTRA_DATABASE_URL: z.url(),
-    GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1),
+    // Optional: LLM keys are managed in the /settings UI (encrypted DB
+    // store). Env vars remain a bootstrap fallback for the provider
+    // resolver; a missing key here just means the UI entry is required.
+    GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
+    OPENAI_API_KEY: z.string().optional(),
+    ANTHROPIC_API_KEY: z.string().optional(),
+    XAI_API_KEY: z.string().optional(),
+    DEEPSEEK_API_KEY: z.string().optional(),
+    // Encrypts broker/LLM credentials stored in the DB (written via the
+    // /settings UI). Required in production; dev derives a fallback key.
+    SECRET_BOX_KEY: z.string().optional(),
     API_KEY_PATTERN: z.string().min(1),
     API_KEY_VALID: z.string().min(1),
     DEMO_API_KEY: z.string().min(1),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
-    // Live OKX broker credentials (optional). When absent, order execution
-    // uses the paper-book stub so dev/tests never touch a real account.
-    OKX_API_KEY: z.string().optional(),
-    OKX_SECRET: z.string().optional(),
-    OKX_PASSPHRASE: z.string().optional(),
-    OKX_DEMO: z.string().optional(),
-    OKX_REGION: z.enum(["default", "eea", "us"]).optional(),
     // Optional StockTwits application-level access token. Public stream reads
     // work without it but are often blocked by the platform's bot challenge;
     // the token makes the SENTIMENT tool reliable.
@@ -42,11 +45,11 @@ export const env = createEnv({
     DEMO_API_KEY: process.env.DEMO_API_KEY,
     NEXT_PUBLIC_API_KEY_PREFIX: process.env.NEXT_PUBLIC_API_KEY_PREFIX,
     NODE_ENV: process.env.NODE_ENV,
-    OKX_API_KEY: process.env.OKX_API_KEY,
-    OKX_SECRET: process.env.OKX_SECRET,
-    OKX_PASSPHRASE: process.env.OKX_PASSPHRASE,
-    OKX_DEMO: process.env.OKX_DEMO,
-    OKX_REGION: process.env.OKX_REGION,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    XAI_API_KEY: process.env.XAI_API_KEY,
+    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
+    SECRET_BOX_KEY: process.env.SECRET_BOX_KEY,
     STOCKTWITS_TOKEN: process.env.STOCKTWITS_TOKEN,
     REDIS_URL: process.env.REDIS_URL,
   },

@@ -17,12 +17,14 @@ import type {
  *
  * Wraps authenticated and public endpoints the broker adapter needs:
  * placing orders, fetching order state, account balances and positions.
- * Every private call signs the request via `authHeaders`.
+ * Every private call signs the request via `authHeaders`, which resolves
+ * credentials from the server-side store (DB) on each call.
  */
 
 export class OKXClient {
-  private buildUrl(path: string): string {
-    return `${createOKXConfig().restBaseUrl}${path}`;
+  private async buildUrl(path: string): Promise<string> {
+    const config = await createOKXConfig();
+    return `${config.restBaseUrl}${path}`;
   }
 
   private async request<T>(
@@ -33,9 +35,9 @@ export class OKXClient {
   ): Promise<OKXResponse<T>> {
     const requestBody = body ? JSON.stringify(body) : "";
     const requestPath = appendQuery(path, query);
-    const response = await fetch(this.buildUrl(requestPath), {
+    const response = await fetch(await this.buildUrl(requestPath), {
       body: requestBody || undefined,
-      headers: authHeaders(method, requestPath, requestBody),
+      headers: await authHeaders(method, requestPath, requestBody),
       method,
     });
     const json = (await response.json()) as OKXResponse<T>;
@@ -51,7 +53,7 @@ export class OKXClient {
    */
   async placeOrder(request: OrderRequest): Promise<OrderResponse> {
     const body = {
-      clOrdId: request.clOrdId ?? generateClOrdId(),
+      clOrdId: request.clOrdId ?? (await generateClOrdIdAsync()),
       instId: request.instId,
       ordType: request.ordType,
       px: request.px,
@@ -158,6 +160,15 @@ export class OKXClient {
     );
     return res.data[0];
   }
+}
+
+/**
+ * Sync generateClOrdId is kept for non-order uses; the client awaits this
+ * async alias so a future DB-derived component stays possible without
+ * touching call sites again.
+ */
+async function generateClOrdIdAsync(): Promise<string> {
+  return generateClOrdId();
 }
 
 function appendQuery(path: string, query: Record<string, string>): string {

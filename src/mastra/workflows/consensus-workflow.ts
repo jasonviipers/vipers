@@ -1,6 +1,6 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
-
+import { getRuntimeSettings } from "@/lib/runtime-settings";
 import {
   reasoningAnalysisAgentConfig,
   riskAgentConfig,
@@ -16,7 +16,6 @@ import {
   type RiskDecision,
   type SignalCreated,
 } from "../events/contracts";
-import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 import { placeOrder } from "../tools/execution-tool";
 import { fetchMarketSignals } from "../tools/market-signals-tool";
@@ -373,7 +372,12 @@ const executionStep = createStep({
       orderId: orderResult.orderId,
       proposalId: decision.proposalId,
       quantity: orderResult.quantity,
-      type: orderResult.status === "FILLED" ? "ORDER_FILLED" : "ORDER_FAILED",
+      type:
+        orderResult.status === "FILLED"
+          ? "ORDER_FILLED"
+          : orderResult.status === "PENDING"
+            ? "ORDER_SUBMITTED"
+            : "ORDER_FAILED",
     };
 
     if (mastra) {
@@ -405,7 +409,7 @@ const executionStep = createStep({
     order: z.object({
       asset: z.string(),
       orderId: z.string(),
-      status: z.enum(["FILLED", "FAILED", "BLOCKED"]),
+      status: z.enum(["FILLED", "FAILED", "PENDING", "BLOCKED"]),
     }),
   }),
 });
@@ -419,7 +423,7 @@ export const consensusWorkflow = createWorkflow({
     order: z.object({
       asset: z.string(),
       orderId: z.string(),
-      status: z.enum(["FILLED", "FAILED", "BLOCKED"]),
+      status: z.enum(["FILLED", "FAILED", "PENDING", "BLOCKED"]),
     }),
   }),
 })

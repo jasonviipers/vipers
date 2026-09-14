@@ -59,7 +59,7 @@ export class OKXWebSocketClient {
     this.callbacks = callbacks;
   }
 
-  private config(): OKXConfig {
+  private config(): Promise<OKXConfig> {
     return createOKXConfig();
   }
 
@@ -67,16 +67,19 @@ export class OKXWebSocketClient {
     if (this.state === "closed") {
       return;
     }
-    this.openSocket(this.config().wsBaseUrl);
+    void this.openSocket();
   }
 
-  private openSocket(baseUrl: string): void {
+  private async openSocket(): Promise<void> {
     this.state = "connecting";
-    const privatePath = `${baseUrl}/private${
-      this.config().simulated ? "?brokerId=9999" : ""
+    const config = await this.config();
+    const privatePath = `${config.wsBaseUrl}/private${
+      config.simulated ? "?brokerId=9999" : ""
     }`;
     this.socket = new WebSocket(privatePath);
-    this.socket.on("open", () => this.login());
+    this.socket.on("open", () => {
+      void this.login();
+    });
     this.socket.on("message", (data) => this.onMessage(String(data)));
     this.socket.on("close", (code, reason) =>
       this.onClose(code, reason.toString()),
@@ -153,18 +156,20 @@ export class OKXWebSocketClient {
   }
 
   private login(): void {
-    const config = this.config();
-    this.send({
-      args: [
-        {
-          apiKey: config.apiKey,
-          passphrase: config.passphrase,
-          sign: wsSign(timestampMs()),
-          timestamp: timestampMs(),
-        },
-      ],
-      op: "login",
-    });
+    void (async () => {
+      const config = await this.config();
+      this.send({
+        args: [
+          {
+            apiKey: config.apiKey,
+            passphrase: config.passphrase,
+            sign: await wsSign(timestampMs()),
+            timestamp: timestampMs(),
+          },
+        ],
+        op: "login",
+      });
+    })();
   }
 
   private subscribeAll(): void {

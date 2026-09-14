@@ -27,11 +27,14 @@ export interface RuntimeSettings {
   heartbeatInterval: number;
   maxDailyLossPct: number;
   maxOpenPositions: number;
+  /** Default LLM provider for the agent fleet (validated upstream). */
+  defaultLlmProvider: string;
 }
 
 export const RUNTIME_SETTINGS_DEFAULTS: RuntimeSettings = {
   consensusQuorum: 50,
   debugMode: false,
+  defaultLlmProvider: "GOOGLE",
   heartbeatInterval: 30,
   maxDailyLossPct: 3,
   maxOpenPositions: 10,
@@ -40,6 +43,9 @@ export const RUNTIME_SETTINGS_DEFAULTS: RuntimeSettings = {
 export const runtimeSettingsSchema = z.object({
   consensusQuorum: z.number().int().min(30).max(100).optional(),
   debugMode: z.boolean().optional(),
+  defaultLlmProvider: z
+    .enum(["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK"])
+    .optional(),
   heartbeatInterval: z.number().int().min(5).max(120).optional(),
   maxDailyLossPct: z.number().int().min(1).max(20).optional(),
   maxOpenPositions: z.number().int().min(1).max(50).optional(),
@@ -58,6 +64,8 @@ export async function getRuntimeSettings(): Promise<RuntimeSettings> {
       consensusQuorum:
         row.consensusQuorum ?? RUNTIME_SETTINGS_DEFAULTS.consensusQuorum,
       debugMode: row.debugMode,
+      defaultLlmProvider:
+        row.defaultLlmProvider ?? RUNTIME_SETTINGS_DEFAULTS.defaultLlmProvider,
       heartbeatInterval:
         row.heartbeatInterval ?? RUNTIME_SETTINGS_DEFAULTS.heartbeatInterval,
       maxDailyLossPct:
@@ -92,6 +100,7 @@ export async function updateRuntimeSettings(
     .values({
       consensusQuorum: next.consensusQuorum,
       debugMode: next.debugMode,
+      defaultLlmProvider: next.defaultLlmProvider,
       heartbeatInterval: next.heartbeatInterval,
       id: "global",
       maxDailyLossPct: next.maxDailyLossPct,
@@ -103,6 +112,7 @@ export async function updateRuntimeSettings(
       set: {
         consensusQuorum: next.consensusQuorum,
         debugMode: next.debugMode,
+        defaultLlmProvider: next.defaultLlmProvider,
         heartbeatInterval: next.heartbeatInterval,
         maxDailyLossPct: next.maxDailyLossPct,
         maxOpenPositions: next.maxOpenPositions,

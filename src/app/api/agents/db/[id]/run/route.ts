@@ -1,7 +1,7 @@
 import { useLogger, withEvlog } from "@/lib/evlog";
 import { requireWriteAccess } from "@/lib/route-auth";
-import { reasoningAnalysisAgent } from "@/mastra/agents/trading-agents";
 import { parseTradeProposal } from "@/mastra/agents/trade-proposal";
+import { reasoningAnalysisAgent } from "@/mastra/agents/trading-agents";
 import {
   type AnalysisProposed,
   newId,

@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 
 import {
-  type TerminalSettings,
   loadTerminalSettings,
   subscribeTerminalSettings,
+  type TerminalSettings,
 } from "@/lib/terminal-settings";
 
 /**

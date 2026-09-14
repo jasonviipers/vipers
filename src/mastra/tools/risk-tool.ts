@@ -16,6 +16,7 @@ import { riskControls } from "@/db/schema/risk";
 import { positions } from "@/db/schema/trading";
 import { log } from "@/lib/evlog";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
+import { fetchMarketQuote } from "./market-quote-tool";
 
 export interface RiskLimits {
   /** Max realized daily loss, percent of current total capital. */
@@ -44,6 +45,7 @@ export interface RiskGateContext {
 }
 
 const MIN_CONFIDENCE_FLOOR = 0.6;
+const MAX_MARKET_DATA_AGE_MS = 30_000;
 
 function startOfLocalDay(): Date {
   const now = new Date();
@@ -221,14 +223,29 @@ export async function evaluateProposalRiskServer(
   try {
     // The operator's runtime-settings daily-loss cap overrides the
     // agent-config default when present.
-    const [runtime, killSwitchEnabled, dailyRealizedPnl, totalCapital, openPositions] =
-      await Promise.all([
-        getRuntimeSettings(),
-        isKillSwitchEnabled(),
-        fetchDailyRealizedPnl(),
-        fetchTotalCapital(),
-        fetchOpenPositionsCount(),
-      ]);
+    const [
+      runtime,
+      killSwitchEnabled,
+      dailyRealizedPnl,
+      totalCapital,
+      openPositions,
+      quote,
+    ] = await Promise.all([
+      getRuntimeSettings(),
+      isKillSwitchEnabled(),
+      fetchDailyRealizedPnl(),
+      fetchTotalCapital(),
+      fetchOpenPositionsCount(),
+      fetchMarketQuote(input.asset),
+    ]);
+    const quoteAgeMs = Date.now() - quote.fetchedAt;
+    if (quote.stale || quoteAgeMs > MAX_MARKET_DATA_AGE_MS) {
+      return {
+        approved: false,
+        positionSizePct: 0,
+        reason: `Market quote is stale (${Math.max(0, Math.round(quoteAgeMs / 1000))}s old); proposal rejected`,
+      };
+    }
     context = {
       dailyRealizedPnl,
       killSwitchEnabled,

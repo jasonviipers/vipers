@@ -50,6 +50,13 @@
       "when": 1789398903171,
       "tag": "0006_neat_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789399571207,
+      "tag": "0007_charming_chat",
+      "breakpoints": true
     }
   ]
 }
