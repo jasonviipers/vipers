@@ -200,10 +200,14 @@ async function reconcileFill(
     }
   }
   return {
-    detail: `Order ${ordId} still ${lastState} after ${(attempts * intervalMs) / 1000}s (filled ${lastFillSz} so far); reconcile via the orders channel`,
+    detail: `Order ${ordId} still ${lastState} after ${(attempts * intervalMs) / 1000}s (filled ${lastFillSz} so far); NOT confirmed — reconcile manually via the orders channel before treating this as a position`,
     filled: false,
     quantity: lastFillSz,
-    status: "FILLED",
+    // Unconfirmed is not filled. The order may still fill on the exchange,
+    // but the pipeline must never record a fill it has not seen; the
+    // clOrdId is deterministic per proposal, so a manual re-check or a
+    // duplicate submission for the same proposal hits the same order.
+    status: "FAILED",
   };
 }
 

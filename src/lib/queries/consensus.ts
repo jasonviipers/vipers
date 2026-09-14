@@ -10,6 +10,7 @@ export interface ConsensusProposal {
   /** 0-1. */
   confidence: number;
   votesFor: number;
+  votesAgainst: number;
   totalVoters: number;
   createdAt: string;
   deadline: string;
@@ -17,6 +18,8 @@ export interface ConsensusProposal {
 
 export interface ConsensusProposalsResponse {
   items: ConsensusProposal[];
+  /** "db" = consensus tables, "events" = runtime event-buffer fallback. */
+  source: "db" | "events";
 }
 
 export const consensusKeys = {

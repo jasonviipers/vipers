@@ -2,8 +2,10 @@
 
 import {
   AreaSeries,
+  type ChartOptions,
   ColorType,
   createChart,
+  type DeepPartial,
   HistogramSeries,
   LineSeries,
   type Time,
@@ -40,7 +42,7 @@ export function LightweightTimeSeriesChart({
     const container = containerRef.current;
     if (!container) return;
 
-    const options = {
+    const options: DeepPartial<ChartOptions> = {
       width: container.clientWidth,
       height,
       layout: {
@@ -59,7 +61,7 @@ export function LightweightTimeSeriesChart({
         horzLine: { color: "#5a6a7a", width: 1 },
       },
     };
-    const chart = createChart(container, options as any);
+    const chart = createChart(container, options);
     const series =
       type === "area"
         ? chart.addSeries(AreaSeries, {
@@ -103,6 +105,7 @@ export function LightweightTimeSeriesChart({
       ref={containerRef}
       className={className}
       style={{ height }}
+      role="img"
       aria-label="Interactive time series chart"
     />
   );

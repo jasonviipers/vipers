@@ -48,6 +48,11 @@ export const GET = withEvlog(async () => {
           select count(*)::int from ${consensusVotes}
           where ${consensusVotes.proposalId} = ${consensusProposals.id}
         )`,
+        votesAgainst: sql<number>`(
+          select count(*)::int from ${consensusVotes}
+          where ${consensusVotes.proposalId} = ${consensusProposals.id}
+            and ${consensusVotes.vote} = 'against'
+        )`,
         votesFor: sql<number>`(
           select count(*)::int from ${consensusVotes}
           where ${consensusVotes.proposalId} = ${consensusProposals.id}
@@ -69,6 +74,7 @@ export const GET = withEvlog(async () => {
       proposedBy: row.proposedBy ?? row.proposedByAgentId,
       status: row.status,
       totalVoters: Number(row.totalVoters),
+      votesAgainst: Number(row.votesAgainst),
       votesFor: Number(row.votesFor),
     }));
   } catch (error) {
@@ -114,6 +120,7 @@ export const GET = withEvlog(async () => {
           // as approved, otherwise still pending until risk gates it.
           status: event.votesFor > event.votesAgainst ? "approved" : "pending",
           totalVoters: event.votesFor + event.votesAgainst,
+          votesAgainst: event.votesAgainst,
           votesFor: event.votesFor,
         });
       }
@@ -133,5 +140,5 @@ export const GET = withEvlog(async () => {
   return Response.json({
     items,
     source,
-  } satisfies ConsensusProposalsResponse & { source: "db" | "events" });
+  } satisfies ConsensusProposalsResponse);
 });

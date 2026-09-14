@@ -5,6 +5,7 @@ import type * as React from "react";
 
 function Label({ className, ...props }: React.ComponentProps<"label">) {
   return (
+    // biome-ignore lint/a11y/noLabelWithoutControl: matches upstream shadcn/ui — association is the caller's responsibility (htmlFor / nested control), not the primitive's
     <label
       data-slot="label"
       className={cn(

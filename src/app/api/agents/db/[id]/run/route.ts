@@ -1,4 +1,5 @@
 import { useLogger, withEvlog } from "@/lib/evlog";
+import { requireWriteAccess } from "@/lib/route-auth";
 import { reasoningAnalysisAgent } from "@/mastra/agents/trading-agents";
 import {
   type AnalysisProposed,
@@ -54,6 +55,12 @@ export const POST = withEvlog(
     const logger = useLogger();
     logger.set({ integration: "agents" });
 
+    // Spends an LLM call — write-access only (demo key is read-only).
+    const auth = requireWriteAccess(request);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const { id } = await ctx.params;
     if (id !== reasoningAnalysisAgentConfigId) {
       return Response.json(
@@ -90,7 +97,7 @@ export const POST = withEvlog(
     await agentRuntime.publish(signal);
 
     // Stage 2 — ANALYSIS (identical to the workflow's analysis step).
-    const technicals = fetchTechnicals(target);
+    const technicals = await fetchTechnicals(target);
     const proposals: RunResponse["proposals"] = [];
 
     try {
@@ -115,9 +122,21 @@ Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Repl
         parsed = {};
       }
 
-      const parsedDirection = parsed.direction === "SHORT" ? "SHORT" : null;
-      const technicalDirection = technicals.trend === "DOWN" ? "SHORT" : "LONG";
-      const direction: "LONG" | "SHORT" = parsedDirection ?? technicalDirection;
+      // LLM output is untrusted: only an explicit LONG/SHORT counts.
+      // ABSTAIN or unparsable output means NO proposal — the UI must not
+      // receive a paper-trade suggestion the model never made.
+      const direction: "LONG" | "SHORT" | null =
+        parsed.direction === "LONG" || parsed.direction === "SHORT"
+          ? parsed.direction
+          : null;
+
+      if (direction === null) {
+        logger.set({
+          warning: "reasoning agent abstained or returned unparsable output",
+        });
+        return Response.json({ proposals: [] } satisfies RunResponse);
+      }
+
       const confidence = Math.max(
         0,
         Math.min(1, parsed.confidence ?? signal.confidence),
@@ -130,8 +149,7 @@ Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Repl
         createdAt: new Date().toISOString(),
         direction,
         proposalId: newId("prp"),
-        reasoning:
-          parsed.reasoning ?? "Heuristic fallback from technical context",
+        reasoning: parsed.reasoning ?? "Reasoning omitted by the model",
         signalId: signal.signalId,
         type: "ANALYSIS_PROPOSED",
       };

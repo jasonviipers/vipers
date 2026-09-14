@@ -75,6 +75,7 @@ function Field({
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof fieldVariants>) {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: matches upstream shadcn/ui — a fieldset would restyle all descendants and break the composable Field API
     <div
       role="group"
       data-slot="field"
@@ -194,15 +195,19 @@ function FieldError({
       ...new Map(errors.map((error) => [error?.message, error])).values(),
     ];
 
-    if (uniqueErrors?.length == 1) {
+    if (uniqueErrors?.length === 1) {
       return uniqueErrors[0]?.message;
     }
 
     return (
       <ul className="ml-4 flex list-disc flex-col gap-1">
-        {uniqueErrors.map(
-          (error, index) =>
-            error?.message && <li key={index}>{error.message}</li>,
+        {uniqueErrors.map((error, index) =>
+          error?.message ? (
+            // Index keys are correct here: the list is a fully re-derived
+            // deduplicated snapshot of form errors — no reordering occurs.
+            // biome-ignore lint/suspicious/noArrayIndexKey: static dedup snapshot, not a reorderable list
+            <li key={index}>{error.message}</li>
+          ) : null,
         )}
       </ul>
     );

@@ -1,18 +1,12 @@
 "use client";
 
 import {
-  AlertTriangle,
   Check,
   ChevronDown,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  Key,
+  CircleSlash,
   KeyRound,
-  Link2,
-  Link2Off,
   Loader2,
-  Shield,
+  ShieldCheck,
   Wallet,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -21,7 +15,6 @@ import {
   type BrokerStatus,
   useBroker,
 } from "@/context/broker-context";
-import { fmtDollar } from "@/lib/format";
 
 function BrokerStatusBadge({ status }: { status: BrokerStatus }) {
   const styles: Record<BrokerStatus, string> = {
@@ -35,8 +28,8 @@ function BrokerStatusBadge({ status }: { status: BrokerStatus }) {
 
   const labels: Record<BrokerStatus, string> = {
     connected: "CONNECTED",
-    disconnected: "OFFLINE",
-    pending: "PENDING",
+    disconnected: "NOT CONFIGURED",
+    pending: "CHECKING",
     error: "ERROR",
   };
 
@@ -48,7 +41,6 @@ function BrokerStatusBadge({ status }: { status: BrokerStatus }) {
         <span className="h-1.5 w-1.5 bg-terminal-green animate-pulse" />
       )}
       {status === "pending" && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-      {status === "error" && <AlertTriangle className="h-2.5 w-2.5" />}
       {labels[status]}
     </span>
   );
@@ -70,15 +62,16 @@ function AccountTypeTag({ type }: { type: BrokerAccount["accountType"] }) {
   );
 }
 
-// OKX requires a third credential (the API passphrase set when the key was
-// created) in addition to the key/secret pair every other broker uses here.
-function isOkxBroker(broker: BrokerAccount): boolean {
-  return (
-    broker.id?.toLowerCase() === "okx" ||
-    broker.shortName?.toLowerCase() === "okx"
-  );
-}
-
+/**
+ * Broker configuration panel.
+ *
+ * Connection state is SERVER-OWNED: OKX is connected when the deployment's
+ * environment carries OKX_API_KEY / OKX_SECRET / OKX_PASSPHRASE (with
+ * OKX_DEMO choosing the paper endpoints). Credentials never pass through
+ * the browser, so there is deliberately no key-entry form here — the panel
+ * reports the real routing state and exposes the one operator control:
+ * enabling/disabling trading on this broker (a local preference).
+ */
 function BrokerConfigPanel({
   broker,
   onClose,
@@ -86,65 +79,10 @@ function BrokerConfigPanel({
   broker: BrokerAccount;
   onClose: () => void;
 }) {
-  const { updateBrokerKeys, disconnectBroker, setActiveBroker } = useBroker();
-  const [apiKey, setApiKey] = useState("");
-  const [apiSecret, setApiSecret] = useState("");
-  const [apiPassphrase, setApiPassphrase] = useState("");
-  const [showKey, setShowKey] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
-  const [showPassphrase, setShowPassphrase] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [connected, setConnected] = useState(false);
-
-  const isCurrentlyConnected = broker.status === "connected";
-  const isOkx = isOkxBroker(broker);
-  const canConnect =
-    apiKey.trim().length > 0 &&
-    (!isOkx || apiPassphrase.trim().length > 0) &&
-    !connecting;
-
-  function handleConnect() {
-    if (!canConnect) return;
-    setConnecting(true);
-    // Simulate connection
-    setTimeout(() => {
-      updateBrokerKeys(broker.id, {
-        apiKeySet: true,
-        apiSecretSet: apiSecret.length > 0,
-        ...(isOkx ? { apiPassphraseSet: apiPassphrase.length > 0 } : {}),
-        status: "connected",
-        accountId: `${broker.shortName}-****${Math.floor(1000 + Math.random() * 9000)}`,
-        balance: Math.round((10000 + Math.random() * 200000) * 100) / 100,
-        lastSync: new Date(),
-      });
-      setConnecting(false);
-      setConnected(true);
-      setActiveBroker(broker.id);
-      setTimeout(() => onClose(), 1200);
-    }, 1500);
-  }
-
-  function handleDisconnect() {
-    disconnectBroker(broker.id);
-    onClose();
-  }
-
-  function handleOAuth() {
-    setConnecting(true);
-    setTimeout(() => {
-      updateBrokerKeys(broker.id, {
-        oauthConnected: true,
-        status: "connected",
-        accountId: `${broker.shortName}-****${Math.floor(1000 + Math.random() * 9000)}`,
-        balance: Math.round((10000 + Math.random() * 200000) * 100) / 100,
-        lastSync: new Date(),
-      });
-      setConnecting(false);
-      setConnected(true);
-      setActiveBroker(broker.id);
-      setTimeout(() => onClose(), 1200);
-    }, 2000);
-  }
+  const { serverStatus, connectionStatus, setTradingEnabled } = useBroker();
+  const status = connectionStatus(broker.id);
+  const isOkx = broker.id === "okx";
+  const isEnabled = broker.tradingEnabled;
 
   return (
     <div className="flex flex-col gap-4">
@@ -156,304 +94,103 @@ function BrokerConfigPanel({
           </span>
           <AccountTypeTag type={broker.accountType} />
         </div>
-        <BrokerStatusBadge status={connected ? "connected" : broker.status} />
+        <BrokerStatusBadge status={status} />
       </div>
 
       <p className="text-[10px] text-muted-foreground leading-relaxed">
         {broker.description}
       </p>
 
-      {/* Security notice */}
-      <div className="flex items-start gap-2 border border-terminal-amber/20 bg-terminal-amber/5 p-2.5">
-        <Shield className="h-3.5 w-3.5 text-terminal-amber shrink-0 mt-0.5" />
+      {/* Routing explanation */}
+      <div className="flex items-start gap-2 border border-terminal-cyan/20 bg-terminal-cyan/5 p-2.5">
+        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-terminal-cyan" />
         <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-bold text-terminal-amber">
-            SECURITY
+          <span className="text-[10px] font-bold text-terminal-cyan">
+            SERVER-SIDE ROUTING
           </span>
           <span className="text-[9px] text-muted-foreground leading-relaxed">
-            API credentials are encrypted at rest and never transmitted in
-            plaintext. Use read-only keys when possible. Revoke access at any
-            time from your broker dashboard.
+            Broker credentials live in the server environment and are never
+            entered in the browser. The execution team routes through OKX when
+            the server has credentials; otherwise every order fills on the paper
+            book.
           </span>
         </div>
       </div>
 
-      {/* Auth method */}
-      {(broker.authMethod === "oauth" || broker.authMethod === "both") &&
-        !isCurrentlyConnected && (
-          <div className="flex flex-col gap-2">
-            <span className="text-[10px] font-bold tracking-wider text-muted-foreground">
-              OAUTH CONNECTION
-            </span>
-            <button
-              type="button"
-              onClick={handleOAuth}
-              disabled={connecting}
-              className="flex items-center justify-center gap-2 border border-border bg-secondary py-2 text-[10px] font-bold tracking-wider text-foreground hover:border-terminal-green/40 hover:bg-terminal-green/5 transition-colors disabled:opacity-50"
-            >
-              {connecting ? (
-                <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  AUTHORIZING...
-                </>
-              ) : (
-                <>
-                  <ExternalLink className="h-3 w-3" />
-                  CONNECT WITH {broker.shortName}
-                </>
-              )}
-            </button>
-            {broker.authMethod === "both" && (
-              <div className="flex items-center gap-2 text-[9px] text-terminal-dim">
-                <div className="flex-1 border-t border-border" />
-                <span>OR USE API KEYS</span>
-                <div className="flex-1 border-t border-border" />
-              </div>
-            )}
-          </div>
-        )}
-
-      {/* API Key inputs */}
-      {(broker.authMethod === "api_key" || broker.authMethod === "both") &&
-        !isCurrentlyConnected && (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold tracking-wider text-muted-foreground">
-                  API KEY
-                </span>
-                {broker.apiKeySet && (
-                  <span className="text-[9px] font-bold text-terminal-green">
-                    SET
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex flex-1 items-center gap-2 border border-border bg-secondary px-3 py-1.5">
-                  <Key className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <input
-                    type={showKey ? "text" : "password"}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={`${broker.shortName} API key...`}
-                    className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-terminal-dim font-mono"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowKey(!showKey)}
-                  className="border border-border bg-secondary p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showKey ? (
-                    <EyeOff className="h-3 w-3" />
-                  ) : (
-                    <Eye className="h-3 w-3" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold tracking-wider text-muted-foreground">
-                  API SECRET
-                </span>
-                {broker.apiSecretSet && (
-                  <span className="text-[9px] font-bold text-terminal-green">
-                    SET
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex flex-1 items-center gap-2 border border-border bg-secondary px-3 py-1.5">
-                  <Shield className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <input
-                    type={showSecret ? "text" : "password"}
-                    value={apiSecret}
-                    onChange={(e) => setApiSecret(e.target.value)}
-                    placeholder={`${broker.shortName} API secret...`}
-                    className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-terminal-dim font-mono"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowSecret(!showSecret)}
-                  className="border border-border bg-secondary p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showSecret ? (
-                    <EyeOff className="h-3 w-3" />
-                  ) : (
-                    <Eye className="h-3 w-3" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* OKX-only: API passphrase set at key creation time */}
-            {isOkx && (
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold tracking-wider text-muted-foreground">
-                    API PASSPHRASE
-                  </span>
-                  {broker.apiPassphraseSet && (
-                    <span className="text-[9px] font-bold text-terminal-green">
-                      SET
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex flex-1 items-center gap-2 border border-border bg-secondary px-3 py-1.5">
-                    <KeyRound className="h-3 w-3 text-muted-foreground shrink-0" />
-                    <input
-                      type={showPassphrase ? "text" : "password"}
-                      value={apiPassphrase}
-                      onChange={(e) => setApiPassphrase(e.target.value)}
-                      placeholder="OKX API passphrase..."
-                      className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-terminal-dim font-mono"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowPassphrase(!showPassphrase)}
-                    className="border border-border bg-secondary p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showPassphrase ? (
-                      <EyeOff className="h-3 w-3" />
-                    ) : (
-                      <Eye className="h-3 w-3" />
-                    )}
-                  </button>
-                </div>
-                <span className="text-[9px] text-terminal-dim leading-relaxed">
-                  The passphrase you set when generating this key on OKX — not
-                  your account password.
-                </span>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleConnect}
-              disabled={!canConnect}
-              className="flex items-center justify-center gap-2 bg-terminal-green py-2 text-[10px] font-bold tracking-wider text-primary-foreground hover:bg-terminal-green/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {connecting ? (
-                <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  CONNECTING...
-                </>
-              ) : connected ? (
-                <>
-                  <Check className="h-3 w-3" />
-                  CONNECTED
-                </>
-              ) : (
-                <>
-                  <Link2 className="h-3 w-3" />
-                  CONNECT BROKER
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
-      {/* Connected state management */}
-      {isCurrentlyConnected && (
-        <div className="flex flex-col gap-3">
-          {/* Account info */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-0.5 border border-border bg-secondary/50 p-2">
-              <span className="text-[9px] text-muted-foreground">
-                ACCOUNT ID
-              </span>
-              <span className="text-[10px] font-mono font-bold text-foreground">
-                {broker.accountId ?? "---"}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5 border border-border bg-secondary/50 p-2">
-              <span className="text-[9px] text-muted-foreground">BALANCE</span>
-              <span className="text-[10px] font-mono font-bold text-terminal-green">
-                {broker.balance !== undefined
-                  ? fmtDollar(broker.balance)
-                  : "---"}
-              </span>
-            </div>
-          </div>
-
-          {/* Credentials status */}
+      {/* OKX credential truth from the server */}
+      {isOkx &&
+        (serverStatus ? (
           <div className="flex flex-col gap-1.5 border border-border bg-secondary/50 p-2">
             <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
-              CREDENTIALS
+              SERVER CREDENTIALS
             </span>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-foreground">API Key</span>
-              <span
-                className={`text-[9px] font-bold ${broker.apiKeySet ? "text-terminal-green" : "text-terminal-dim"}`}
-              >
-                {broker.apiKeySet ? "CONFIGURED" : "NOT SET"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-foreground">API Secret</span>
-              <span
-                className={`text-[9px] font-bold ${broker.apiSecretSet ? "text-terminal-green" : "text-terminal-dim"}`}
-              >
-                {broker.apiSecretSet ? "CONFIGURED" : "NOT SET"}
-              </span>
-            </div>
-            {isOkx && (
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-foreground">
-                  API Passphrase
-                </span>
+            {(
+              [
+                ["API Key", serverStatus.credentials.apiKey],
+                ["API Secret", serverStatus.credentials.secret],
+                ["API Passphrase", serverStatus.credentials.passphrase],
+              ] as const
+            ).map(([label, set]) => (
+              <div key={label} className="flex items-center justify-between">
+                <span className="text-[10px] text-foreground">{label}</span>
                 <span
-                  className={`text-[9px] font-bold ${broker.apiPassphraseSet ? "text-terminal-green" : "text-terminal-dim"}`}
+                  className={`text-[9px] font-bold ${set ? "text-terminal-green" : "text-terminal-dim"}`}
                 >
-                  {broker.apiPassphraseSet ? "CONFIGURED" : "NOT SET"}
+                  {set ? "CONFIGURED" : "NOT SET"}
                 </span>
               </div>
-            )}
-            {broker.authMethod !== "api_key" && (
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-foreground">OAuth</span>
-                <span
-                  className={`text-[9px] font-bold ${broker.oauthConnected ? "text-terminal-green" : "text-terminal-dim"}`}
-                >
-                  {broker.oauthConnected ? "AUTHORIZED" : "NOT SET"}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Supported assets */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
-              SUPPORTED ASSETS
-            </span>
-            <div className="flex flex-wrap gap-1">
-              {broker.supportedAssets.map((asset) => (
-                <span
-                  key={asset}
-                  className="bg-secondary border border-border px-1.5 py-0.5 text-[9px] text-foreground"
-                >
-                  {asset}
-                </span>
-              ))}
+            ))}
+            <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
+              <span className="text-[10px] text-foreground">
+                EXECUTION MODE
+              </span>
+              <span
+                className={`text-[9px] font-bold ${serverStatus.mode === "live" ? "text-terminal-red" : "text-terminal-amber"}`}
+              >
+                {serverStatus.mode === "live"
+                  ? "LIVE — REAL CAPITAL"
+                  : "DEMO — PAPER ENDPOINTS"}
+              </span>
             </div>
           </div>
+        ) : (
+          <div className="flex items-center gap-2 border border-border bg-secondary/50 p-2 text-[10px] text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Checking server configuration…
+          </div>
+        ))}
 
-          {/* Disconnect */}
-          <button
-            type="button"
-            onClick={handleDisconnect}
-            className="flex items-center justify-center gap-1.5 border border-terminal-red/30 bg-terminal-red/5 py-1.5 text-[10px] font-bold tracking-wider text-terminal-red hover:bg-terminal-red/10 transition-colors"
-          >
-            <Link2Off className="h-3 w-3" />
-            DISCONNECT BROKER
-          </button>
+      {/* Non-wired adapters stay honest */}
+      {!isOkx && (
+        <div className="flex items-start gap-2 border border-border bg-secondary/50 p-2.5">
+          <CircleSlash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-terminal-dim" />
+          <span className="text-[9px] text-muted-foreground leading-relaxed">
+            No broker adapter is wired for this entry yet. Equity symbols always
+            execute on the paper book.
+          </span>
         </div>
       )}
+
+      {/* Operator toggle — the only client-controlled state */}
+      <button
+        type="button"
+        disabled={status !== "connected"}
+        onClick={() => setTradingEnabled(broker.id, !isEnabled)}
+        className={`flex items-center justify-center gap-2 py-2 text-[10px] font-bold tracking-wider transition-colors ${
+          status !== "connected"
+            ? "cursor-not-allowed border border-border bg-secondary text-terminal-dim opacity-50"
+            : isEnabled
+              ? "border border-terminal-red/30 bg-terminal-red/5 text-terminal-red hover:bg-terminal-red/10"
+              : "bg-terminal-green text-primary-foreground hover:bg-terminal-green/80"
+        }`}
+      >
+        <KeyRound className="h-3 w-3" />
+        {status !== "connected"
+          ? "CONFIGURE SERVER CREDENTIALS TO ENABLE"
+          : isEnabled
+            ? "DISABLE TRADING ON THIS BROKER"
+            : "ENABLE TRADING ON THIS BROKER"}
+      </button>
 
       {/* Close */}
       <button
@@ -461,7 +198,7 @@ function BrokerConfigPanel({
         onClick={onClose}
         className="flex items-center justify-center border border-border bg-secondary py-1.5 text-[10px] font-bold tracking-wider text-muted-foreground hover:text-foreground transition-colors"
       >
-        {isCurrentlyConnected ? "DONE" : "CANCEL"}
+        DONE
       </button>
     </div>
   );
@@ -534,16 +271,9 @@ export function ActiveBrokerSwitcher() {
                     {b.name}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  {b.balance !== undefined && (
-                    <span className="text-[9px] font-mono text-terminal-green">
-                      {fmtDollar(b.balance)}
-                    </span>
-                  )}
-                  {active && (
-                    <Check className="h-3 w-3 shrink-0 text-terminal-green" />
-                  )}
-                </div>
+                {active && (
+                  <Check className="h-3 w-3 shrink-0 text-terminal-green" />
+                )}
               </button>
             );
           })}
@@ -554,13 +284,8 @@ export function ActiveBrokerSwitcher() {
 }
 
 export function BrokerAccountsSection() {
-  const {
-    brokers,
-    activeBrokerId,
-    activeBroker,
-    setActiveBroker,
-    connectedBrokers,
-  } = useBroker();
+  const { brokers, activeBrokerId, setActiveBroker, connectionStatus } =
+    useBroker();
   const [open, setOpen] = useState(false);
   const [configuringBrokerId, setConfiguringBroker] = useState<string | null>(
     null,
@@ -570,7 +295,6 @@ export function BrokerAccountsSection() {
   const configuringBrokerData = brokers.find(
     (b) => b.id === configuringBrokerId,
   );
-  const connectedCount = connectedBrokers.length;
 
   // Close the dropdown on outside clicks (same pattern as the header's
   // scheme switcher and ActiveBrokerSwitcher).
@@ -593,10 +317,10 @@ export function BrokerAccountsSection() {
       <div className="flex items-center justify-between gap-4">
         <div className="flex flex-col gap-0.5">
           <span className="text-xs font-bold text-foreground">
-            ACTIVE BROKER
+            EXECUTION ROUTING
           </span>
           <span className="text-[10px] text-muted-foreground">
-            {connectedCount} connected &middot; All trades route here
+            Decided by server configuration &middot; all trades route here
           </span>
         </div>
         <div className="relative" ref={dropdownRef}>
@@ -606,16 +330,8 @@ export function BrokerAccountsSection() {
             className="flex items-center gap-2 border border-border bg-secondary px-3 py-1 text-xs text-foreground hover:border-terminal-green/40 transition-colors"
           >
             <span className="flex items-center gap-1.5">
-              <span
-                className={`h-1.5 w-1.5 shrink-0 ${
-                  activeBroker.status === "connected"
-                    ? "bg-terminal-green animate-pulse"
-                    : activeBroker.status === "pending"
-                      ? "bg-terminal-amber"
-                      : "bg-terminal-dim"
-                }`}
-              />
-              <span>{activeBroker.shortName}</span>
+              <ConnectionDot id="okx" />
+              <span>OKX / PAPER</span>
             </span>
             <ChevronDown
               className={`h-3 w-3 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
@@ -625,13 +341,13 @@ export function BrokerAccountsSection() {
             <div className="absolute right-0 top-full z-50 mt-1 min-w-55 border border-border bg-card shadow-lg shadow-black/40">
               {brokers.map((broker) => {
                 const isActive = broker.id === activeBrokerId;
-                const isConnected = broker.status === "connected";
+                const status = connectionStatus(broker.id);
                 return (
                   <button
                     type="button"
                     key={broker.id}
                     onClick={() => {
-                      if (isConnected) {
+                      if (status === "connected" && broker.tradingEnabled) {
                         setActiveBroker(broker.id);
                         setOpen(false);
                       } else {
@@ -644,15 +360,7 @@ export function BrokerAccountsSection() {
                     }`}
                   >
                     <span className="flex items-center gap-2">
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 ${
-                          broker.status === "connected"
-                            ? "bg-terminal-green"
-                            : broker.status === "pending"
-                              ? "bg-terminal-amber"
-                              : "bg-terminal-dim"
-                        }`}
-                      />
+                      <ConnectionDot id={broker.id} />
                       <span className="flex flex-col items-start gap-0">
                         <span className="font-bold tracking-wider">
                           {broker.shortName}
@@ -663,16 +371,15 @@ export function BrokerAccountsSection() {
                       </span>
                     </span>
                     <span className="flex items-center gap-2">
-                      {isConnected && broker.balance !== undefined && (
-                        <span className="text-[9px] font-mono text-terminal-green">
-                          {fmtDollar(broker.balance)}
-                        </span>
-                      )}
-                      {!isConnected && (
-                        <span className="text-[9px] font-bold tracking-wider text-terminal-dim">
-                          {broker.status === "pending" ? "PENDING" : "CONNECT"}
-                        </span>
-                      )}
+                      <span className="text-[9px] font-bold tracking-wider text-terminal-dim">
+                        {status === "connected"
+                          ? broker.tradingEnabled
+                            ? "ENABLED"
+                            : "ENABLE"
+                          : status === "pending"
+                            ? "CHECKING"
+                            : "SETUP"}
+                      </span>
                       {isActive && (
                         <Check className="h-3 w-3 shrink-0 text-terminal-green" />
                       )}
@@ -695,5 +402,22 @@ export function BrokerAccountsSection() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Connection dot derived from server state (never from user input). */
+function ConnectionDot({ id }: { id: string }) {
+  const { connectionStatus } = useBroker();
+  const status = connectionStatus(id);
+  return (
+    <span
+      className={`h-1.5 w-1.5 shrink-0 ${
+        status === "connected"
+          ? "bg-terminal-green"
+          : status === "pending"
+            ? "bg-terminal-amber animate-pulse"
+            : "bg-terminal-dim"
+      }`}
+    />
   );
 }

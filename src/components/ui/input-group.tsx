@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: matches upstream shadcn/ui — a fieldset would restyle all descendants and break the composable InputGroup API
     <div
       data-slot="input-group"
       role="group"
@@ -49,6 +50,7 @@ function InputGroupAddon({
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof inputGroupAddonVariants>) {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: matches upstream shadcn/ui — addon is a passive grouping, not an interactive fieldset
     <div
       role="group"
       data-slot="input-group-addon"
@@ -59,6 +61,17 @@ function InputGroupAddon({
           return;
         }
         e.currentTarget.parentElement?.querySelector("input")?.focus();
+      }}
+      onKeyDown={(e) => {
+        // Keyboard parity for the click-to-focus behavior: focus the
+        // group's input on Enter/Space when the addon itself is reached.
+        if (e.key === "Enter" || e.key === " ") {
+          const target = e.currentTarget.parentElement?.querySelector("input");
+          if (target) {
+            e.preventDefault();
+            target.focus();
+          }
+        }
       }}
       {...props}
     />

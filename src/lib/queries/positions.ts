@@ -19,9 +19,34 @@ export interface OpenPositionsResponse {
   items: OpenPosition[];
 }
 
+export interface ClosedPosition {
+  id: string;
+  asset: string;
+  direction: "LONG" | "SHORT";
+  /** Agent display name (from agents.name); falls back to the id. */
+  agentName: string;
+  entryPrice: number;
+  /** Mark price recorded at close; null when the row predates price caching. */
+  exitPrice: number | null;
+  quantity: number;
+  pnl: number;
+  pnlPct: number;
+  openedAt: string;
+  closedAt: string;
+}
+
+export interface ClosedPositionsResponse {
+  items: ClosedPosition[];
+}
+
 export const openPositionsKeys = {
   all: ["positions-open"] as const,
   list: () => [...openPositionsKeys.all, "list"] as const,
+};
+
+export const closedPositionsKeys = {
+  all: ["positions-closed"] as const,
+  list: () => [...closedPositionsKeys.all, "list"] as const,
 };
 
 async function fetchJson<T>(input: string): Promise<T> {
@@ -40,5 +65,17 @@ export const openPositionsQueries = {
       queryFn: () => fetchJson<OpenPositionsResponse>("/api/positions/open"),
       refetchInterval: 30_000,
       staleTime: 30_000,
+    }),
+};
+
+export const closedPositionsQueries = {
+  /** History is immutable per row; a 60s poll only catches brand-new closes. */
+  list: () =>
+    queryOptions({
+      queryKey: closedPositionsKeys.list(),
+      queryFn: () =>
+        fetchJson<ClosedPositionsResponse>("/api/positions/closed"),
+      refetchInterval: 60_000,
+      staleTime: 60_000,
     }),
 };

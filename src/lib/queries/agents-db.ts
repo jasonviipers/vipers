@@ -29,6 +29,14 @@ export interface AgentFleetEntry {
     maxDrawdown: number;
     pnl: number;
     roi: number;
+    /**
+     * Persisted leaderboard score from `agent_stats.score` (written by the
+     * leaderboard-score job). Null until the job's first run; the leaderboard
+     * falls back to the client-side composite heuristic for that case.
+     */
+    score: number | null;
+    /** When the persisted score was last computed; null alongside score. */
+    scoreComputedAt: string | null;
     sharpe: number;
     trades: number;
     winRate: number;

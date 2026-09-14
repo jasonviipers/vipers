@@ -1,9 +1,14 @@
 /**
  * Live market quote source (crypto via CoinGecko, equities via Yahoo
  * Finance). Unlike the other tools/*.ts modules, this hits real external
- * APIs, with a short in-memory cache and stale-on-error fallback so a
- * transient upstream failure doesn't take down an agent mid-run.
+ * APIs, with a two-layer cache and stale-on-error fallback so a transient
+ * upstream failure doesn't take down an agent mid-run.
+ *
+ * Cache layers: L1 = in-process Map (microseconds, per instance),
+ * L2 = Redis (src/lib/redis.ts, ~ms, shared across instances and restarts)
+ * when REDIS_URL is configured. A dead Redis degrades to L1-only.
  */
+import { cacheGetJson, cacheSetJson } from "@/lib/redis";
 export interface MarketQuote {
   asset: string;
   change: number;
@@ -22,7 +27,32 @@ const cryptoIds: Record<string, string> = {
 };
 
 const cache = new Map<string, { expires: number; quote: MarketQuote }>();
-const TTL = 20_000;
+const TTL_MS = 20_000;
+const TTL_SECONDS = 20;
+
+/** Fresh quote from either layer; null on miss. */
+async function readCache(key: string): Promise<MarketQuote | null> {
+  const mem = cache.get(key);
+  if (mem && mem.expires > Date.now()) {
+    return mem.quote;
+  }
+  const shared = await cacheGetJson<MarketQuote>(`quote:${key}`);
+  if (shared) {
+    // Repopulate L1 so subsequent reads skip the network hop.
+    cache.set(key, { expires: Date.now() + TTL_MS, quote: shared });
+    return shared;
+  }
+  return null;
+}
+
+/** Last known quote from either layer, even if past its TTL. */
+async function readStaleCache(key: string): Promise<MarketQuote | null> {
+  const mem = cache.get(key);
+  if (mem) {
+    return mem.quote;
+  }
+  return cacheGetJson<MarketQuote>(`quote:${key}`);
+}
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -99,18 +129,23 @@ function formatVolume(value: number): string {
 
 export async function fetchMarketQuote(asset: string): Promise<MarketQuote> {
   const key = asset.toUpperCase();
-  const cached = cache.get(key);
-  if (cached && cached.expires > Date.now()) {
-    return cached.quote;
+
+  const cached = await readCache(key);
+  if (cached) {
+    return cached;
   }
+
   try {
     const quote = await (cryptoIds[key] ? fetchCrypto(key) : fetchEquity(key));
-    cache.set(key, { expires: Date.now() + TTL, quote });
+    cache.set(key, { expires: Date.now() + TTL_MS, quote });
+    // Write-through to the shared layer; failure is a no-op.
+    await cacheSetJson(`quote:${key}`, quote, TTL_SECONDS);
     return quote;
   } catch (error) {
-    const stale = cache.get(key);
+    // Stale-on-error: serve the last known quote from either layer.
+    const stale = await readStaleCache(key);
     if (stale) {
-      return stale.quote;
+      return stale;
     }
     throw error;
   }

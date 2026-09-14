@@ -1,4 +1,5 @@
 "use client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Bell,
@@ -20,6 +21,7 @@ import {
   type ColorSchemeId,
   useColorScheme,
 } from "@/context/color-scheme-context";
+import { getStoredApiKey } from "@/lib/api-key";
 import {
   DEFAULT_TERMINAL_SETTINGS,
   loadTerminalSettings,
@@ -342,6 +344,58 @@ export function SettingsView() {
     setSaved(false);
   }
 
+  // --- Kill switch: server-owned, not a localStorage preference ---
+  const queryClient = useQueryClient();
+  const killSwitchQuery = useQuery<boolean>({
+    queryFn: async () => {
+      const res = await fetch("/api/risk/kill-switch");
+      if (!res.ok) {
+        throw new Error(`API ${res.status}`);
+      }
+      return ((await res.json()) as { enabled: boolean }).enabled;
+    },
+    queryKey: ["risk", "kill-switch"],
+    staleTime: 10_000,
+  });
+  const killSwitchMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const key = getStoredApiKey();
+      const res = await fetch("/api/risk/kill-switch", {
+        body: JSON.stringify({ enabled }),
+        headers: {
+          "content-type": "application/json",
+          ...(key ? { "x-api-key": key } : {}),
+        },
+        method: "POST",
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(`Kill switch update failed: ${res.status} ${detail}`);
+      }
+      return enabled;
+    },
+    // Optimistic: flip immediately, roll back on failure, reconcile.
+    onMutate: async (enabled) => {
+      await queryClient.cancelQueries({ queryKey: ["risk", "kill-switch"] });
+      const previous = queryClient.getQueryData<boolean>([
+        "risk",
+        "kill-switch",
+      ]);
+      queryClient.setQueryData(["risk", "kill-switch"], enabled);
+      return { previous };
+    },
+    onError: (_error, _enabled, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(["risk", "kill-switch"], context.previous);
+      }
+      setKillSwitchError("UPDATE FAILED — STATE ROLLED BACK");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["risk", "kill-switch"] });
+    },
+  });
+  const [killSwitchError, setKillSwitchError] = useState<string | null>(null);
+
   return (
     <div className="flex h-full flex-col">
       {/* Header bar */}
@@ -512,21 +566,39 @@ export function SettingsView() {
                     </span>
                   </div>
                   <span className="text-[10px] text-muted-foreground">
-                    Emergency halt: close all positions and stop all agents
+                    Emergency halt: blocks all new order submission at the
+                    server-side risk gate
                   </span>
+                  {killSwitchError && (
+                    <span className="text-[10px] font-bold text-terminal-red">
+                      {killSwitchError}
+                    </span>
+                  )}
                 </div>{" "}
                 <button
                   type="button"
+                  aria-label={
+                    killSwitchQuery.data
+                      ? "Disarm kill switch"
+                      : "Arm kill switch"
+                  }
+                  disabled={
+                    killSwitchQuery.isPending || killSwitchQuery.isLoading
+                  }
                   onClick={() =>
-                    set("killSwitchEnabled", !settings.killSwitchEnabled)
+                    killSwitchMutation.mutate(!killSwitchQuery.data)
                   }
                   className={`shrink-0 border px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                    settings.killSwitchEnabled
+                    killSwitchQuery.data
                       ? "border-terminal-red/40 bg-terminal-red/10 text-terminal-red"
                       : "border-border bg-secondary text-terminal-dim"
                   }`}
                 >
-                  {settings.killSwitchEnabled ? "ARMED" : "DISARMED"}
+                  {killSwitchQuery.isLoading
+                    ? "…"
+                    : killSwitchQuery.data
+                      ? "ARMED"
+                      : "DISARMED"}
                 </button>
               </div>
             </SettingsSection>

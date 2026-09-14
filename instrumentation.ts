@@ -32,4 +32,24 @@ if (
   };
 
   void startSnapshotJob();
+
+  // Leaderboard score rollup — persists per-agent composite scores so
+  // rankings survive restarts (same cadence as the snapshot job; scores
+  // only move when trades close, so hourly is plenty).
+  const startScoreJob = async () => {
+    const { runLeaderboardScoreJob } = await import(
+      "./src/lib/jobs/leaderboard-score-job"
+    );
+    const { log } = await import("./src/lib/evlog");
+    const run = () =>
+      runLeaderboardScoreJob().catch(() => {
+        // Errors are logged inside the job; never crash the process.
+      });
+    setTimeout(run, 20_000).unref();
+    const timer = setInterval(run, JOB_INTERVAL_MS);
+    timer.unref();
+    log.info({ job: "leaderboard-score", scheduled: "hourly" });
+  };
+
+  void startScoreJob();
 }

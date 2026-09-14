@@ -124,17 +124,6 @@ function MiniSparkline({ data, color }: { data: number[]; color: string }) {
   );
 }
 
-type PendingProposal = {
-  id: string;
-  asset: string;
-  direction: "LONG" | "SHORT";
-  quantity: number;
-  entryPrice: number | null;
-  reasoning: string;
-  confidence: number;
-  agentName: string;
-};
-
 type Agent = AgentFleetEntry;
 
 function AgentCard({ agent }: { agent: Agent }) {
@@ -256,7 +245,6 @@ function TeamSummary({ team, agents }: { team: string; agents: Agent[] }) {
 export function AgentsView() {
   const [selectedTeam, setSelectedTeam] = useState<string>("ALL");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [proposals, setProposals] = useState<PendingProposal[]>([]);
 
   const fleetQuery = useQuery(agentsDbQueries.fleet());
   const allAgents: Agent[] = fleetQuery.data?.items ?? [];
@@ -375,57 +363,6 @@ export function AgentsView() {
       {/* Main content - Agent cards */}
       <div className="flex-1 flex flex-col min-w-0">
         <ScrollArea className="flex-1">
-          {proposals.length > 0 && (
-            <div className="border-b border-border bg-card p-3 sm:p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h2 className="text-xs font-bold tracking-wider text-foreground">
-                    PAPER TRADE PROPOSALS
-                  </h2>
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    AI-generated recommendations require manual approval.
-                  </p>
-                </div>
-                <span className="text-[10px] text-terminal-amber">
-                  {proposals.length} PENDING
-                </span>
-              </div>
-              <div className="flex flex-col gap-2">
-                {proposals.map((proposal) => (
-                  <div
-                    key={proposal.id}
-                    className="border border-border/80 p-3"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-foreground">
-                          {proposal.asset}
-                        </span>
-                        <span
-                          className={
-                            proposal.direction === "LONG"
-                              ? "text-terminal-green"
-                              : "text-terminal-red"
-                          }
-                        >
-                          {proposal.direction}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          QTY {proposal.quantity}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-terminal-cyan">
-                        CONF {(proposal.confidence * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <p className="mt-2 max-w-3xl text-xs leading-relaxed text-muted-foreground">
-                      {proposal.reasoning}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="grid grid-cols-1 gap-px p-px sm:grid-cols-2 xl:grid-cols-3">
             {filteredAgents.map((agent) => (
               <AgentCard key={agent.id} agent={agent} />

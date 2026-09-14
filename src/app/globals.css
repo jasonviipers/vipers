@@ -348,9 +348,9 @@
   .animate-slide-in,
   .animate-pulse-soft,
   .animate-ping {
-    animation: none !important;
+    animation: none;
   }
   .animate-ticker {
-    animation-duration: 0s !important;
+    animation-duration: 0s;
   }
 }

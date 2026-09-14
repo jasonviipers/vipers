@@ -6,11 +6,19 @@
  * When OKX credentials are configured, orders route through the live
  * `src/channels` broker adapter. Otherwise a paper-book stub is used
  * so development and tests never touch a real account.
+ *
+ * Persistence + idempotency: every outcome is recorded in the `orders`
+ * table keyed by the risk-approved proposalId (UNIQUE). A duplicate
+ * submission for the same proposal — retry, crash-recovery, double-run —
+ * returns the original outcome instead of creating a second order. This
+ * replaces the old in-memory Map, which did not survive restarts.
  */
 
 import { env } from "@/env";
+import { log } from "@/lib/evlog";
 
 import { placeMarketOrder } from "../broker/okx-broker";
+import { recordOrderOutcome } from "./order-persistence";
 
 export interface OrderRequest {
   asset: string;
@@ -31,14 +39,6 @@ const NOTIONAL_BOOK = 100_000;
 const okxConfigured = Boolean(
   env.OKX_API_KEY && env.OKX_SECRET && env.OKX_PASSPHRASE,
 );
-
-// In-memory dedup by proposalId. This is a stop-gap: it prevents a double
-// submission within a single process/run, but does NOT survive a restart
-// or work across replicas. Before real capital flows through this, back
-// this with a unique constraint on proposal_id in Postgres (storage.ts
-// already gives you a Postgres connection) so idempotency holds across
-// restarts and horizontal scaling.
-const submittedOrders = new Map<string, OrderResult>();
 
 function paperResult(request: OrderRequest): OrderResult {
   const quantity = Number(
@@ -61,29 +61,50 @@ function paperResult(request: OrderRequest): OrderResult {
 }
 
 export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
-  const existing = submittedOrders.get(request.proposalId);
-  if (existing) {
-    return existing;
-  }
-
   let result: OrderResult;
-  if (okxConfigured) {
-    const brokerResult = await placeMarketOrder(
-      request.asset,
-      request.direction,
-      request.positionSizePct,
-      request.proposalId,
-    );
+  const mode: "live" | "paper" = okxConfigured ? "live" : "paper";
+
+  try {
+    result = okxConfigured ? await liveOrder(request) : paperResult(request);
+  } catch (error) {
+    // The adapter normally converts errors to FAILED, but a throw here
+    // (e.g. persistence/agent resolution) must still be recorded loudly.
     result = {
-      detail: brokerResult.detail,
-      orderId: brokerResult.orderId,
-      quantity: brokerResult.quantity,
-      status: brokerResult.status,
+      detail:
+        error instanceof Error ? error.message : "order submission failed",
+      orderId: `${request.proposalId}:o0`,
+      quantity: 0,
+      status: "FAILED",
     };
-  } else {
-    result = paperResult(request);
   }
 
-  submittedOrders.set(request.proposalId, result);
-  return result;
+  try {
+    const persisted = await recordOrderOutcome(request, result, mode);
+    return persisted.result;
+  } catch (error) {
+    // Persistence failure must not fabricate a success — surface the
+    // failure; the deterministic clOrdId keeps an accidental re-send of
+    // the same proposal on the same OKX order (live mode).
+    log.error(
+      error instanceof Error
+        ? error
+        : new Error("order persistence failed after submission"),
+    );
+    return result;
+  }
+}
+
+async function liveOrder(request: OrderRequest): Promise<OrderResult> {
+  const brokerResult = await placeMarketOrder(
+    request.asset,
+    request.direction,
+    request.positionSizePct,
+    request.proposalId,
+  );
+  return {
+    detail: brokerResult.detail,
+    orderId: brokerResult.orderId,
+    quantity: brokerResult.quantity,
+    status: brokerResult.status,
+  };
 }

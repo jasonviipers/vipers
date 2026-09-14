@@ -23,6 +23,13 @@ export const env = createEnv({
     OKX_PASSPHRASE: z.string().optional(),
     OKX_DEMO: z.string().optional(),
     OKX_REGION: z.enum(["default", "eea", "us"]).optional(),
+    // Optional StockTwits application-level access token. Public stream reads
+    // work without it but are often blocked by the platform's bot challenge;
+    // the token makes the SENTIMENT tool reliable.
+    STOCKTWITS_TOKEN: z.string().optional(),
+    // Optional Redis connection (Upstash rediss:// or any Redis URL). When
+    // absent, caches fall back to in-process memory. Parsed by src/lib/redis.ts.
+    REDIS_URL: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_PUBLISHABLE_KEY: z.string().min(1),
@@ -45,9 +52,7 @@ export const env = createEnv({
     OKX_PASSPHRASE: process.env.OKX_PASSPHRASE,
     OKX_DEMO: process.env.OKX_DEMO,
     OKX_REGION: process.env.OKX_REGION,
+    STOCKTWITS_TOKEN: process.env.STOCKTWITS_TOKEN,
+    REDIS_URL: process.env.REDIS_URL,
   },
-  // For Next.js >= 13.4.4, you only need to destructure client variables:
-  // experimental__runtimeEnv: {
-  //   NEXT_PUBLIC_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_PUBLISHABLE_KEY,
-  // }
 });

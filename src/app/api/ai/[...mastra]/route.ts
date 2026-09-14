@@ -1,14 +1,14 @@
 import { createNextRouteHandler } from "@mastra/next";
 import type { NextRequest } from "next/server";
 import { useLogger, withEvlog } from "@/lib/evlog";
-// import { identifyEvlogUser } from "@/lib/evlog-auth";
+import { identifyEvlogUser } from "@/lib/evlog-auth";
 import { mastra } from "@/mastra";
 
 const handlers = createNextRouteHandler({ mastra, prefix: "/api/ai" });
 
 function wrap(handler: (request: NextRequest) => Response | Promise<Response>) {
   return withEvlog(async (request: NextRequest) => {
-    // await identifyEvlogUser(request); // attaches user to the wide event
+    await identifyEvlogUser(request); // attaches user to the wide event
     useLogger().set({ integration: "mastra" });
     return handler(request);
   });

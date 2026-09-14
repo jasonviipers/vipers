@@ -16,7 +16,7 @@ import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ActiveBrokerSwitcher } from "@/components/settings/broker-accounts";
-import { useTerminalClock } from "@/hooks/use-terminal-clock";
+import { NotificationBell } from "@/components/terminal/notification-bell";
 import { APP_NAME } from "@/lib/constant";
 import { agentsDbQueries } from "@/lib/queries/agents-db";
 
@@ -33,7 +33,6 @@ const NAV_ITEMS = [
 
 export function TerminalHeader({ onSignOut }: { onSignOut?: () => void }) {
   const pathname = usePathname();
-  const { time, date } = useTerminalClock();
   const { data: fleet } = useQuery(agentsDbQueries.fleet());
   const onlineCount = fleet?.onlineCount ?? 0;
   const totalAgents = fleet?.total ?? 0;
@@ -87,11 +86,8 @@ export function TerminalHeader({ onSignOut }: { onSignOut?: () => void }) {
         <div className="hidden sm:block">
           <ActiveBrokerSwitcher />
         </div>
-
-        <div className="hidden items-center gap-2 sm:flex">
-          <span className="text-muted-foreground">{date}</span>
-          <span className="text-terminal-amber font-bold">{time}</span>
-        </div>
+        {/* Notifications: unread badge + dropdown, read state persists locally */}
+        <NotificationBell />
         {onSignOut && (
           <button
             type="button"

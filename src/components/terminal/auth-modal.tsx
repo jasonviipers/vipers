@@ -79,9 +79,29 @@ export function AuthModal({
   async function handleDemo() {
     setError("");
     setIsDemoLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    storeApiKey(DEMO_API_KEY);
-    onAuthenticate(DEMO_API_KEY, true);
+    try {
+      // Validate against the server like the real-key path — the demo key
+      // is env-configured server-side and may differ from the client hint.
+      const res = await fetch("/api/auth/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: DEMO_API_KEY }),
+      });
+      const payload = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        demo?: boolean;
+      } | null;
+      if (!res.ok || payload?.ok !== true) {
+        setError("DEMO UNAVAILABLE");
+        setIsDemoLoading(false);
+        return;
+      }
+      storeApiKey(DEMO_API_KEY);
+      onAuthenticate(DEMO_API_KEY, payload.demo === true);
+    } catch {
+      setError("CONNECTION ERROR — RETRY");
+      setIsDemoLoading(false);
+    }
   }
 
   const isBusy = isAuthenticating || isDemoLoading;

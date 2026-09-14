@@ -17,7 +17,7 @@ import {
 } from "../events/contracts";
 import { placeOrder } from "../tools/execution-tool";
 import { fetchMarketSignals } from "../tools/market-signals-tool";
-import { evaluateProposalRisk } from "../tools/risk-tool";
+import { evaluateProposalRiskServer } from "../tools/risk-tool";
 import { fetchTechnicals } from "../tools/technical-analysis-tool";
 
 /**
@@ -90,7 +90,7 @@ const analysisStep = createStep({
     const { signal } = inputData;
     const { asset } = signal;
 
-    const technicals = fetchTechnicals(asset);
+    const technicals = await fetchTechnicals(asset);
     const reasoning = await reasoningAnalysisAgent.generate(
       `Market signal for ${asset}: confidence ${signal.confidence}.
 Highlights: ${signal.highlights.join("; ")}
@@ -109,9 +109,21 @@ Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Repl
       parsed = {};
     }
 
-    const parsedDirection = parsed.direction === "SHORT" ? "SHORT" : null;
-    const technicalDirection = technicals.trend === "DOWN" ? "SHORT" : "LONG";
-    const direction: "LONG" | "SHORT" = parsedDirection ?? technicalDirection;
+    // LLM output is untrusted input: only an explicit LONG/SHORT counts as
+    // a direction. ABSTAIN, a missing/unparsable field, or any other value
+    // means NO PROPOSAL — the pipeline ends here (no direction is invented
+    // from technical context, which would turn a non-decision into a trade).
+    const direction: "LONG" | "SHORT" | null =
+      parsed.direction === "LONG" || parsed.direction === "SHORT"
+        ? parsed.direction
+        : null;
+
+    if (direction === null) {
+      return {
+        proposal: null,
+      };
+    }
+
     const confidence = Math.max(
       0,
       Math.min(1, parsed.confidence ?? signal.confidence),
@@ -124,8 +136,7 @@ Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Repl
       createdAt: new Date().toISOString(),
       direction,
       proposalId: newId("prp"),
-      reasoning:
-        parsed.reasoning ?? "Heuristic fallback from technical context",
+      reasoning: parsed.reasoning ?? "Reasoning omitted by the model",
       signalId: signal.signalId,
       type: "ANALYSIS_PROPOSED",
     };
@@ -148,14 +159,19 @@ Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Repl
   id: "analysis",
   inputSchema: signalOutputSchema,
   outputSchema: z.object({
-    proposal: z.object({
-      asset: z.string(),
-      confidence: z.number().min(0).max(1),
-      direction: z.enum(["LONG", "SHORT"]),
-      proposalId: z.string(),
-      reasoning: z.string(),
-      signalId: z.string(),
-    }),
+    // Null when the reasoning agent abstained or returned unparsable
+    // output: downstream steps skip cleanly instead of trading on a
+    // fabricated direction.
+    proposal: z
+      .object({
+        asset: z.string(),
+        confidence: z.number().min(0).max(1),
+        direction: z.enum(["LONG", "SHORT"]),
+        proposalId: z.string(),
+        reasoning: z.string(),
+        signalId: z.string(),
+      })
+      .nullable(),
   }),
 });
 
@@ -163,6 +179,11 @@ const consensusStep = createStep({
   description: "COORDINATION: aggregate votes and form consensus (advisory)",
   execute: async ({ inputData, mastra }) => {
     const { proposal } = inputData;
+
+    // No proposal (LLM abstained or malformed output) — nothing to vote on.
+    if (proposal === null) {
+      return { consensus: null };
+    }
 
     // Advisory consensus: the coordinator counts analysis votes. Confidence
     // at or above the floor counts as a vote for; below is a vote against.
@@ -202,26 +223,30 @@ const consensusStep = createStep({
   },
   id: "consensus",
   inputSchema: z.object({
-    proposal: z.object({
-      asset: z.string(),
-      confidence: z.number().min(0).max(1),
-      direction: z.enum(["LONG", "SHORT"]),
-      proposalId: z.string(),
-      reasoning: z.string(),
-      signalId: z.string(),
-    }),
+    proposal: z
+      .object({
+        asset: z.string(),
+        confidence: z.number().min(0).max(1),
+        direction: z.enum(["LONG", "SHORT"]),
+        proposalId: z.string(),
+        reasoning: z.string(),
+        signalId: z.string(),
+      })
+      .nullable(),
   }),
   outputSchema: z.object({
-    consensus: z.object({
-      approved: z.boolean(),
-      asset: z.string(),
-      confidence: z.number().min(0).max(1),
-      direction: z.enum(["LONG", "SHORT"]),
-      proposalId: z.string(),
-      signalId: z.string(),
-      votesAgainst: z.number(),
-      votesFor: z.number(),
-    }),
+    consensus: z
+      .object({
+        approved: z.boolean(),
+        asset: z.string(),
+        confidence: z.number().min(0).max(1),
+        direction: z.enum(["LONG", "SHORT"]),
+        proposalId: z.string(),
+        signalId: z.string(),
+        votesAgainst: z.number(),
+        votesFor: z.number(),
+      })
+      .nullable(),
   }),
 });
 
@@ -230,12 +255,20 @@ const riskGateStep = createStep({
     "RISK: mandatory hard validation (the only approval that counts)",
   execute: async ({ inputData, mastra }) => {
     const { consensus } = inputData;
+
+    // No proposal reached consensus — the risk gate is never even consulted.
+    if (consensus === null) {
+      return { decision: null };
+    }
+
     const limits = riskAgentConfig.riskLimits ?? {
       maxDailyLoss: 3,
       maxPositionPct: 5,
     };
 
-    const result = evaluateProposalRisk(
+    // Server gate: kill switch + daily-loss ledger checks run inside
+    // evaluateProposalRiskServer (fail closed on lookup errors).
+    const result = await evaluateProposalRiskServer(
       {
         asset: consensus.asset,
         confidence: consensus.confidence,
@@ -272,26 +305,30 @@ const riskGateStep = createStep({
   },
   id: "risk-gate",
   inputSchema: z.object({
-    consensus: z.object({
-      approved: z.boolean(),
-      asset: z.string(),
-      confidence: z.number().min(0).max(1),
-      direction: z.enum(["LONG", "SHORT"]),
-      proposalId: z.string(),
-      signalId: z.string(),
-      votesAgainst: z.number(),
-      votesFor: z.number(),
-    }),
+    consensus: z
+      .object({
+        approved: z.boolean(),
+        asset: z.string(),
+        confidence: z.number().min(0).max(1),
+        direction: z.enum(["LONG", "SHORT"]),
+        proposalId: z.string(),
+        signalId: z.string(),
+        votesAgainst: z.number(),
+        votesFor: z.number(),
+      })
+      .nullable(),
   }),
   outputSchema: z.object({
-    decision: z.object({
-      approved: z.boolean(),
-      asset: z.string(),
-      direction: z.enum(["LONG", "SHORT"]),
-      positionSizePct: z.number(),
-      proposalId: z.string(),
-      reason: z.string(),
-    }),
+    decision: z
+      .object({
+        approved: z.boolean(),
+        asset: z.string(),
+        direction: z.enum(["LONG", "SHORT"]),
+        positionSizePct: z.number(),
+        proposalId: z.string(),
+        reason: z.string(),
+      })
+      .nullable(),
   }),
 });
 
@@ -299,6 +336,17 @@ const executionStep = createStep({
   description: "EXECUTION: submit the order for risk-approved proposals only",
   execute: async ({ inputData, mastra }) => {
     const { decision } = inputData;
+
+    // Nothing reached the risk gate (abstain/malformed analysis) — no order.
+    if (decision === null) {
+      return {
+        order: {
+          asset: "",
+          orderId: "",
+          status: "BLOCKED" as const,
+        },
+      };
+    }
 
     // Execution is the only component allowed to submit broker orders, and
     // only when the mandatory risk gate has approved the proposal.
@@ -344,14 +392,16 @@ const executionStep = createStep({
   },
   id: "execution",
   inputSchema: z.object({
-    decision: z.object({
-      approved: z.boolean(),
-      asset: z.string(),
-      direction: z.enum(["LONG", "SHORT"]),
-      positionSizePct: z.number(),
-      proposalId: z.string(),
-      reason: z.string(),
-    }),
+    decision: z
+      .object({
+        approved: z.boolean(),
+        asset: z.string(),
+        direction: z.enum(["LONG", "SHORT"]),
+        positionSizePct: z.number(),
+        proposalId: z.string(),
+        reason: z.string(),
+      })
+      .nullable(),
   }),
   outputSchema: z.object({
     order: z.object({

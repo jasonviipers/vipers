@@ -30,6 +30,8 @@ export const GET = withEvlog(async () => {
     maxDrawdown: number;
     pnl: number;
     roi: number;
+    score: number | null;
+    scoreComputedAt: string | null;
     sharpe: number;
     status: string;
     trades: number;
@@ -56,6 +58,10 @@ export const GET = withEvlog(async () => {
         maxDrawdown: Number(stats?.maxDrawdown ?? 0),
         pnl: Number(stats?.pnl ?? 0),
         roi: Number(stats?.roi ?? 0),
+        score: stats?.score != null ? Number(stats.score) : null,
+        scoreComputedAt: stats?.scoreComputedAt
+          ? stats.scoreComputedAt.toISOString()
+          : null,
         sharpe: Number(stats?.sharpe ?? 0),
         status: row.status,
         trades: stats?.trades ?? 0,
@@ -106,6 +112,9 @@ export const GET = withEvlog(async () => {
         maxDrawdown: dbRow?.maxDrawdown ?? 0,
         pnl: dbRow?.pnl ?? 0,
         roi: dbRow?.roi ?? 0,
+        /** Persisted leaderboard score; null until the score job has run. */
+        score: dbRow?.score ?? null,
+        scoreComputedAt: dbRow?.scoreComputedAt ?? null,
         sharpe: dbRow?.sharpe ?? 0,
         trades: dbRow?.trades ?? 0,
         winRate: dbRow?.winRate ?? 0,
