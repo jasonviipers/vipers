@@ -1,6 +1,8 @@
 import {
   boolean,
+  index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -23,6 +25,53 @@ export const llmProviderEnum = pgEnum("llm_provider", [
   "XAI",
   "DEEPSEEK",
 ]);
+
+export const strategyPluginStageEnum = pgEnum("strategy_plugin_stage", [
+  "DRAFT",
+  "BACKTEST",
+  "WALK_FORWARD",
+  "SHADOW",
+  "PAPER",
+  "CANARY",
+  "LIVE",
+  "HALTED",
+]);
+
+/** Versioned strategy/plugin identity and evidence contract. */
+export const strategyPlugins = pgTable("strategy_plugins", {
+  capabilities: jsonb("capabilities").notNull(),
+  configHash: text("config_hash").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  evidenceRequirements: jsonb("evidence_requirements").notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+  pluginId: text("plugin_id").primaryKey(),
+  pluginVersion: text("plugin_version").notNull(),
+});
+
+/** Durable promotion lineage; every stage change is an append-only record. */
+export const strategyPromotions = pgTable(
+  "strategy_promotions",
+  {
+    configHash: text("config_hash").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    dataSnapshotIds: jsonb("data_snapshot_ids").notNull(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    metrics: jsonb("metrics"),
+    pluginId: text("plugin_id")
+      .notNull()
+      .references(() => strategyPlugins.pluginId),
+    pluginVersion: text("plugin_version").notNull(),
+    policyHash: text("policy_hash").notNull(),
+    stage: strategyPluginStageEnum("stage").notNull(),
+  },
+  (t) => ({
+    pluginStageIdx: index("strategy_promotions_plugin_stage_idx").on(
+      t.pluginId,
+      t.stage,
+      t.createdAt,
+    ),
+  }),
+);
 
 export const strategies = pgTable("strategies", {
   active: boolean("active").notNull().default(false),

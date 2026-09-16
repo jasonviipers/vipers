@@ -1,11 +1,12 @@
 import { z } from "zod";
-
-import { useLogger, withEvlog } from "@/lib/evlog";
 import {
   deleteBrokerCredentials,
   getBrokerCredentials,
   saveBrokerCredentials,
+  updateBrokerSettings,
 } from "@/lib/broker-credentials";
+import { invalidateBrokerHealth } from "@/lib/broker-health";
+import { useLogger, withEvlog } from "@/lib/evlog";
 import { requireWriteAccess } from "@/lib/route-auth";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,11 @@ const upsertSchema = z.object({
   passphrase: z.string().trim().min(1).max(128),
   region: z.enum(["default", "eea", "us"]),
   secret: z.string().trim().min(16).max(128),
+});
+
+const patchSchema = z.object({
+  mode: z.enum(["demo", "live"]).optional(),
+  region: z.enum(["default", "eea", "us"]).optional(),
 });
 
 function mask(key: string): string {
@@ -77,10 +83,65 @@ export const PUT = withEvlog(async (request: Request) => {
   }
 
   await saveBrokerCredentials("okx", parsed.data);
+  invalidateBrokerHealth("okx");
   logger.set({
     audit: "broker_credentials_updated",
     brokerId: "okx",
     mode: parsed.data.mode,
+  });
+  return Response.json({ ok: true });
+});
+
+/**
+ * PATCH /api/broker/credentials — update EXECUTION MODE / REGION only,
+ * keeping the stored secrets. One-click fix for OKX's 50101
+ * key/environment mismatch (demo key saved under LIVE or vice versa) that
+ * would otherwise require re-typing all three secrets. Write-access only.
+ */
+export const PATCH = withEvlog(async (request: Request) => {
+  const logger = useLogger();
+  logger.set({ integration: "broker" });
+
+  const auth = requireWriteAccess(request);
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json(
+      { error: "invalid settings payload", detail: parsed.error.flatten() },
+      { status: 400 },
+    );
+  }
+  if (!parsed.data.mode && !parsed.data.region) {
+    return Response.json(
+      { error: "nothing to update: provide mode and/or region" },
+      { status: 400 },
+    );
+  }
+
+  const stored = await getBrokerCredentials("okx");
+  if (!stored) {
+    return Response.json(
+      { error: "no credentials stored; save credentials first" },
+      { status: 404 },
+    );
+  }
+
+  await updateBrokerSettings("okx", parsed.data);
+  invalidateBrokerHealth("okx");
+  logger.set({
+    audit: "broker_settings_updated",
+    brokerId: "okx",
+    keys: Object.keys(parsed.data),
   });
   return Response.json({ ok: true });
 });
@@ -100,6 +161,7 @@ export const DELETE = withEvlog(async (request: Request) => {
   }
 
   await deleteBrokerCredentials("okx");
+  invalidateBrokerHealth("okx");
   logger.set({ audit: "broker_credentials_deleted", brokerId: "okx" });
   return Response.json({ ok: true });
 });

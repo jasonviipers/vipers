@@ -1,4 +1,5 @@
 import { getBrokerCredentials } from "@/lib/broker-credentials";
+import { type BrokerHealth, checkBrokerHealth } from "@/lib/broker-health";
 import { useLogger, withEvlog } from "@/lib/evlog";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +21,13 @@ export const GET = withEvlog(async () => {
   logger.set({ integration: "broker" });
 
   const stored = await getBrokerCredentials("okx");
+  // Active credential probe (cached 5 min OK / 30 s fail, deduped): stored
+  // fields say "configured", only a live call says "authenticated". Failures
+  // come back with the OKX code + fix hint so the UI can warn precisely.
+  const health: BrokerHealth = await checkBrokerHealth("okx");
   const response = stored
     ? {
+        auth: health,
         credentials: {
           apiKey: true,
           passphrase: true,
@@ -34,6 +40,7 @@ export const GET = withEvlog(async () => {
         region: stored.region,
       }
     : {
+        auth: health,
         credentials: { apiKey: false, passphrase: false, secret: false },
         id: "okx",
         mode: "paper" as const,

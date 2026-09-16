@@ -11,16 +11,21 @@ import { runtimeSettings } from "@/db/schema/trading";
  * positions and debug mode write here (via PUT /api/settings/runtime) and
  * the ENFORCERS read from here:
  *
- *   consensusQuorum   → consensus step threshold   (workflow)
- *   maxDailyLossPct   → risk gate daily-loss cap   (risk gate)
- *   maxOpenPositions  → risk gate open-positions cap (risk gate)
- *   debugMode         → events feed detail level   (events route)
+ *   automationEnabled     → automation tick gate     (automation job)
+ *   automationIntervalSec → automation pass cadence  (automation job)
+ *   consensusQuorum       → consensus step threshold (workflow)
+ *   maxDailyLossPct       → risk gate daily-loss cap (risk gate)
+ *   maxOpenPositions      → risk gate open-positions cap (risk gate)
+ *   debugMode             → events feed detail level (events route)
  *
  * Display-only preferences (timezone, animations, notifications, etc.)
  * remain client-side in terminal-settings.
  */
 
 export interface RuntimeSettings {
+  automationEnabled: boolean;
+  /** Seconds between automatic full-pipeline passes (bounded 60–3600). */
+  automationIntervalSec: number;
   consensusQuorum: number;
   debugMode: boolean;
   /** Seconds; drives the agent online-window (interval × 3, bounded). */
@@ -32,6 +37,8 @@ export interface RuntimeSettings {
 }
 
 export const RUNTIME_SETTINGS_DEFAULTS: RuntimeSettings = {
+  automationEnabled: false,
+  automationIntervalSec: 300,
   consensusQuorum: 50,
   debugMode: false,
   defaultLlmProvider: "GOOGLE",
@@ -41,6 +48,8 @@ export const RUNTIME_SETTINGS_DEFAULTS: RuntimeSettings = {
 };
 
 export const runtimeSettingsSchema = z.object({
+  automationEnabled: z.boolean().optional(),
+  automationIntervalSec: z.number().int().min(60).max(3600).optional(),
   consensusQuorum: z.number().int().min(30).max(100).optional(),
   debugMode: z.boolean().optional(),
   defaultLlmProvider: z
@@ -61,6 +70,11 @@ export async function getRuntimeSettings(): Promise<RuntimeSettings> {
 
   if (row) {
     return {
+      automationEnabled:
+        row.automationEnabled ?? RUNTIME_SETTINGS_DEFAULTS.automationEnabled,
+      automationIntervalSec:
+        row.automationIntervalSec ??
+        RUNTIME_SETTINGS_DEFAULTS.automationIntervalSec,
       consensusQuorum:
         row.consensusQuorum ?? RUNTIME_SETTINGS_DEFAULTS.consensusQuorum,
       debugMode: row.debugMode,
@@ -98,6 +112,8 @@ export async function updateRuntimeSettings(
   await db
     .insert(runtimeSettings)
     .values({
+      automationEnabled: next.automationEnabled,
+      automationIntervalSec: next.automationIntervalSec,
       consensusQuorum: next.consensusQuorum,
       debugMode: next.debugMode,
       defaultLlmProvider: next.defaultLlmProvider,
@@ -110,6 +126,8 @@ export async function updateRuntimeSettings(
     .onConflictDoUpdate({
       target: runtimeSettings.id,
       set: {
+        automationEnabled: next.automationEnabled,
+        automationIntervalSec: next.automationIntervalSec,
         consensusQuorum: next.consensusQuorum,
         debugMode: next.debugMode,
         defaultLlmProvider: next.defaultLlmProvider,

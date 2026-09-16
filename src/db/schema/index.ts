@@ -1,4 +1,5 @@
 export * from "./agent";
+export * from "./audit";
 export * from "./auth";
 export * from "./consensus";
 export * from "./portfolio";

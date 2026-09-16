@@ -1,10 +1,10 @@
 # Viipers — Multi-Agent Trading Terminal
 
-Viipers is an AI trading terminal: a swarm of specialized LLM agents (sentiment, analysis, risk, execution, coordination) analyze market signals, vote on trade proposals, gate them through a mandatory risk check, and execute orders — while a real-time terminal-style dashboard shows every stage of the pipeline. Built with Next.js (App Router), Mastra, Drizzle ORM/Postgres, TanStack Query, and Tailwind.
+Viipers is an AI trading terminal: a swarm of specialized LLM agents (sentiment, analysis, risk, execution, coordination) analyze market signals, vote on trade proposals, gate them through a mandatory risk check, and execute orders — while a real-time terminal-style dashboard shows every stage of the pipeline. Built with Next.js (App Router), the Vercel AI SDK, Drizzle ORM/Postgres, TanStack Query, and Tailwind.
 
 ## How It Works
 
-The heart of the system is the **consensus workflow** (`src/mastra/workflows/consensus-workflow.ts`) — a five-step pipeline that runs for every candidate trade:
+The heart of the system is the **consensus workflow** (`src/ai/workflows/consensus-workflow.ts`) — a five-step pipeline that runs for every candidate trade:
 
 ### Pipeline Architecture
 
@@ -65,7 +65,7 @@ Two invariants keep the swarm safe: consensus approval is advisory, and every st
 
 ### Caching
 
-Market quotes are cached in two layers to protect the upstream APIs (CoinGecko/Yahoo) and survive restarts: an in-process Map (L1) and Redis via ioredis (L2, when `REDIS_URL` is set — e.g. Upstash `rediss://`). Redis is fail-safe by design: any error degrades to a cache miss, never a thrown error. See `src/lib/redis.ts` and `src/mastra/tools/market-quote-tool.ts`.
+Market quotes are cached in two layers to protect the upstream APIs (CoinGecko/Yahoo) and survive restarts: an in-process Map (L1) and Redis via ioredis (L2, when `REDIS_URL` is set — e.g. Upstash `rediss://`). Redis is fail-safe by design: any error degrades to a cache miss, never a thrown error. See `src/lib/redis.ts` and `src/ai/tools/market-quote-tool.ts`.
 
 ### Background Jobs
 
@@ -117,8 +117,8 @@ Production schedules hourly rollups from `instrumentation.ts` (dev triggers them
 │   │   ├── leaderboard-score.ts # Composite score + activity floor (single source of truth)
 │   │   ├── evlog.ts            # Structured logging (wide events)
 │   │   └── …                   # auth, api-key, formatting, terminal settings
-│   ├── mastra/                 # The agent swarm
-│   │   ├── agents/             # Agent configs + bound Mastra Agent instances
+│   ├── ai/                    # AI SDK agent swarm
+│   │   ├── agents/             # Agent configs + AI SDK-backed agents
 │   │   ├── tools/              # Capabilities: market data, sentiment, technicals,
 │   │   │                       # risk, execution, StockTwits
 │   │   ├── workflows/          # consensus-workflow (signal → … → execution pipeline)
@@ -159,6 +159,6 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 ## Learn More
 
 - [Next.js Documentation](https://nextjs.org/docs) — learn about Next.js features and API.
-- [Mastra Documentation](https://mastra.ai/docs) — the agent framework powering the swarm.
+- [AI SDK Documentation](https://ai-sdk.dev/docs) — the unified model and tool API powering the swarm.
 - [Drizzle ORM](https://orm.drizzle.team/docs/overview) — schema-first SQL ORM.
 - [TanStack Query](https://tanstack.com/query/latest) — data fetching and optimistic updates.

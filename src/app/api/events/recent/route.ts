@@ -1,7 +1,7 @@
+import type { AgentEvent } from "@/ai/events/contracts";
+import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { useLogger, withEvlog } from "@/lib/evlog";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
-import type { AgentEvent } from "@/mastra/events/contracts";
-import { agentRuntime } from "@/mastra/runtime/agent-runtime";
 
 export const dynamic = "force-dynamic";
 

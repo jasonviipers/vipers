@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { authHeaders, generateClOrdId } from "./auth";
 import { createOKXConfig } from "./config";
 import type {
@@ -21,6 +22,30 @@ import type {
  * credentials from the server-side store (DB) on each call.
  */
 
+/**
+ * OKX API error carrying the exchange's numeric code. Callers (health
+ * checks, credential diagnostics) match on the code to distinguish auth
+ * failures (50113 invalid sign, 50119 unknown key, 50111/50112 credential
+ * problems) from transient issues and to give the operator a targeted fix.
+ */
+const okxEnvelopeSchema = z.object({
+  code: z.string(),
+  data: z.array(z.unknown()),
+  msg: z.string(),
+});
+
+export class OKXApiError extends Error {
+  readonly code: string;
+  readonly path: string;
+
+  constructor(code: string, msg: string, path: string) {
+    super(`OKX ${path} failed: code ${code} — ${msg}`);
+    this.name = "OKXApiError";
+    this.code = code;
+    this.path = path;
+  }
+}
+
 export class OKXClient {
   private async buildUrl(path: string): Promise<string> {
     const config = await createOKXConfig();
@@ -35,14 +60,35 @@ export class OKXClient {
   ): Promise<OKXResponse<T>> {
     const requestBody = body ? JSON.stringify(body) : "";
     const requestPath = appendQuery(path, query);
-    const response = await fetch(await this.buildUrl(requestPath), {
-      body: requestBody || undefined,
-      headers: await authHeaders(method, requestPath, requestBody),
-      method,
-    });
-    const json = (await response.json()) as OKXResponse<T>;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    let response: Response;
+    try {
+      response = await fetch(await this.buildUrl(requestPath), {
+        body: requestBody || undefined,
+        headers: await authHeaders(method, requestPath, requestBody),
+        method,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!response.ok) {
+      throw new OKXApiError(
+        String(response.status),
+        `HTTP ${response.status} ${response.statusText}`,
+        path,
+      );
+    }
+
+    const parsed = okxEnvelopeSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      throw new Error(`OKX ${path} returned an invalid response envelope`);
+    }
+    const json = parsed.data as OKXResponse<T>;
     if (json.code !== "0") {
-      throw new Error(`OKX ${path} failed: code ${json.code} — ${json.msg}`);
+      throw new OKXApiError(json.code, json.msg, path);
     }
     return json;
   }

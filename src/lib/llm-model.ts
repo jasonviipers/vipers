@@ -12,7 +12,7 @@ import { getRuntimeSettings } from "@/lib/runtime-settings";
  * LLM model resolution for the agent fleet.
  *
  * The operator picks a DEFAULT LLM PROVIDER in /settings (runtime_settings
- * row); every Mastra agent resolves its model dynamically against that
+ * row); every AI SDK agent resolves its model dynamically against that
  * setting, so switching providers is a UI action that takes effect on the
  * next agent call — no redeploy.
  *
@@ -26,7 +26,11 @@ import { getRuntimeSettings } from "@/lib/runtime-settings";
 const PROVIDER_MODELS: Record<LlmProviderId, string> = {
   ANTHROPIC: "claude-haiku-4-5",
   DEEPSEEK: "deepseek-chat",
-  GOOGLE: "gemini-2.5-flash",
+  // gemini-2.5-flash is retired for new API keys (404 at call time), and
+  // hardcoding a numbered version rots (the 3.6 id the error suggests does
+  // not exist for this key). "gemini-flash-latest" is Google's maintained
+  // alias that always resolves to the current fast tier.
+  GOOGLE: "gemini-flash-latest",
   OPENAI: "gpt-4.1-mini",
   XAI: "grok-4-fast",
 };

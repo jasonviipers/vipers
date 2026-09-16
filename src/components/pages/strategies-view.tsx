@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   useCreateStrategy,
@@ -19,24 +19,73 @@ import {
   strategyInputSchema,
   strategyQueries,
 } from "@/lib/queries/strategies";
+import {
+  STRATEGY_TEMPLATES,
+  type StrategyTemplate,
+} from "@/lib/strategy-templates";
 import { loadTerminalSettings } from "@/lib/terminal-settings";
 
 // -- helpers ----------------------------------------------------------------
 
 /**
  * New-strategy form seed. The LLM provider preselects from the operator's
- * AGENT CONFIGURATION → DEFAULT LLM PROVIDER setting (settings are loaded
- * lazily at form open; reset restores the setting's provider).
+ * AGENT CONFIGURATION → DEFAULT LLM PROVIDER setting (server-enforced via
+ * /api/settings/runtime; fetched at form open so a provider switch in
+ * /settings applies to the next strategy immediately).
+ *
+ * Templates carry every field EXCEPT the provider — provider is an operator
+ * environment decision, so it is resolved here, never baked into a blueprint.
  */
-function emptyForm(): StrategyInput {
-  const configured = loadTerminalSettings().defaultLlm;
-  // Guard against a stale/unknown value in stored settings.
-  const provider = (LLM_PROVIDERS as readonly string[]).includes(configured)
-    ? (configured as StrategyInput["llmProvider"])
-    : EMPTY_FORM.llmProvider;
+async function resolveDefaultProvider(): Promise<StrategyInput["llmProvider"]> {
+  let provider: StrategyInput["llmProvider"] = EMPTY_FORM.llmProvider;
+  try {
+    const res = await fetch("/api/settings/runtime");
+    if (res.ok) {
+      const settings = (await res.json()) as {
+        defaultLlmProvider?: string;
+      };
+      if (
+        settings.defaultLlmProvider &&
+        (LLM_PROVIDERS as readonly string[]).includes(
+          settings.defaultLlmProvider,
+        )
+      ) {
+        provider = settings.defaultLlmProvider as StrategyInput["llmProvider"];
+      }
+    }
+  } catch {
+    // Server unreachable: fall back to the local terminal setting.
+    const configured = loadTerminalSettings().defaultLlm;
+    if ((LLM_PROVIDERS as readonly string[]).includes(configured)) {
+      provider = configured as StrategyInput["llmProvider"];
+    }
+  }
+  return provider;
+}
+
+async function emptyForm(): Promise<StrategyInput> {
+  const llmProvider = await resolveDefaultProvider();
   return {
     ...EMPTY_FORM,
-    llmProvider: provider,
+    llmProvider,
+  };
+}
+
+async function templateToInput(
+  template: StrategyTemplate,
+): Promise<StrategyInput> {
+  const llmProvider = await resolveDefaultProvider();
+  return {
+    active: true,
+    assets: [...template.assets],
+    entryThreshold: template.entryThreshold,
+    exitThreshold: template.exitThreshold,
+    llmProvider,
+    maxPositionPct: template.maxPositionPct,
+    name: template.name,
+    signalSources: [...template.signalSources],
+    stopLossPct: template.stopLossPct,
+    type: template.type,
   };
 }
 
@@ -347,7 +396,152 @@ function DeleteConfirm({
   );
 }
 
+// -- Template picker modal --------------------------------------------------
+
+/**
+ * New-strategy entry point: pick a named blueprint (pre-filled, editable) or
+ * start from a blank form. Templates are pure config presets — the LLM
+ * provider is resolved at form-open, so a blueprint never pins one.
+ */
+function TemplatePickerModal({
+  onSelect,
+  onClose,
+}: {
+  onSelect: (template: StrategyTemplate | null) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl border border-border bg-card shadow-2xl shadow-black/50">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border bg-secondary/50 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-terminal-green animate-pulse" />
+            <span className="text-xs font-bold tracking-wider text-foreground">
+              NEW STRATEGY {"// SELECT TEMPLATE"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <ScrollArea className="max-h-[70vh]">
+          <div className="flex flex-col gap-2 p-4">
+            {STRATEGY_TEMPLATES.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => onSelect(template)}
+                className="flex flex-col gap-2 border border-border bg-secondary/30 px-4 py-3 text-left transition-colors hover:border-terminal-green/40 hover:bg-terminal-green/5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-foreground">
+                    {template.name}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 border ${getTypeColor(template.type)}`}
+                  >
+                    {template.type.replace(/_/g, " ")}
+                  </span>
+                </div>
+                <span className="text-[10px] text-muted-foreground">
+                  {"// "}
+                  {template.shortDescription}
+                </span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
+                  <span className="text-terminal-green">
+                    ENTRY {"\u2265"}
+                    {template.entryThreshold}
+                  </span>
+                  <span className="text-terminal-amber">
+                    EXIT {"\u2264"}
+                    {template.exitThreshold}
+                  </span>
+                  <span>MAX POS {template.maxPositionPct}%</span>
+                  <span className="text-terminal-red">
+                    STOP {template.stopLossPct}%
+                  </span>
+                  <span className="text-muted-foreground">
+                    ASSETS {template.assets.join(" / ")}
+                  </span>
+                </div>
+              </button>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => onSelect(null)}
+              className="flex flex-col gap-1 border border-dashed border-border bg-transparent px-4 py-3 text-left transition-colors hover:border-terminal-dim hover:bg-secondary/20"
+            >
+              <span className="text-xs font-bold text-muted-foreground">
+                BLANK STRATEGY
+              </span>
+              <span className="text-[10px] text-terminal-dim">
+                {
+                  "// start from an empty form and configure everything manually"
+                }
+              </span>
+            </button>
+          </div>
+        </ScrollArea>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end border-t border-border px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="border border-border px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground hover:border-terminal-dim"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // -- Strategy form modal ----------------------------------------------------
+
+/**
+ * Async wrapper: resolves the form seed (server default LLM provider)
+ * before mounting the form. A brief loading state avoids flashing an
+ * incorrect provider preselect.
+ */
+function AsyncStrategyFormModal(props: {
+  title: string;
+  fetchInitial: () => Promise<StrategyInput>;
+  onSave: (data: StrategyInput) => void;
+  onClose: () => void;
+}) {
+  const [initial, setInitial] = useState<StrategyInput | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    props.fetchInitial().then((seed) => {
+      if (!cancelled) {
+        setInitial(seed);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.fetchInitial]);
+
+  if (!initial) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+        <span className="text-xs uppercase tracking-widest text-terminal-green animate-pulse">
+          Preparing form...
+        </span>
+      </div>
+    );
+  }
+  return <StrategyFormModal {...props} initial={initial} />;
+}
 
 function StrategyFormModal({
   initial,
@@ -704,7 +898,8 @@ export function StrategiesView() {
     deleteMutation.error;
 
   const [modal, setModal] = useState<
-    | { mode: "create" }
+    | { mode: "template" }
+    | { mode: "create"; template?: StrategyTemplate }
     | { mode: "edit"; strategy: StrategyDto }
     | { mode: "delete"; strategy: StrategyDto }
     | null
@@ -729,6 +924,16 @@ export function StrategiesView() {
       { onSuccess: () => setModal(null) },
     );
   }
+
+  // Stable seed callback for the create form: a template resolves into a
+  // full StrategyInput (provider from runtime settings) at form-open. Kept
+  // memoized on the template so an unrelated re-render (e.g. mutation
+  // state) never wipes the user's in-progress edits by refetching.
+  const createTemplate = modal?.mode === "create" ? modal.template : null;
+  const createFetchInitial = useCallback(
+    () => (createTemplate ? templateToInput(createTemplate) : emptyForm()),
+    [createTemplate],
+  );
 
   const strategies = data?.items ?? [];
   const activeCount = strategies.filter((s) => s.active).length;
@@ -756,7 +961,7 @@ export function StrategiesView() {
         </div>
         <button
           type="button"
-          onClick={() => setModal({ mode: "create" })}
+          onClick={() => setModal({ mode: "template" })}
           className="flex items-center gap-1.5 bg-terminal-green/10 border border-terminal-green/30 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-terminal-green transition-colors hover:bg-terminal-green/20"
         >
           <Plus className="h-3 w-3" />
@@ -815,7 +1020,7 @@ export function StrategiesView() {
             </span>
             <button
               type="button"
-              onClick={() => setModal({ mode: "create" })}
+              onClick={() => setModal({ mode: "template" })}
               className="mt-3 text-xs text-terminal-green hover:underline"
             >
               Create your first strategy
@@ -825,10 +1030,22 @@ export function StrategiesView() {
       </ScrollArea>
 
       {/* Modals */}
+      {modal?.mode === "template" && (
+        <TemplatePickerModal
+          onSelect={(t) =>
+            setModal({ mode: "create", template: t ?? undefined })
+          }
+          onClose={() => setModal(null)}
+        />
+      )}
       {modal?.mode === "create" && (
-        <StrategyFormModal
-          title="CREATE NEW STRATEGY"
-          initial={emptyForm()}
+        <AsyncStrategyFormModal
+          title={
+            modal.template
+              ? `CREATE FROM TEMPLATE // ${modal.template.name.toUpperCase()}`
+              : "CREATE NEW STRATEGY"
+          }
+          fetchInitial={createFetchInitial}
           onSave={handleCreate}
           onClose={() => setModal(null)}
         />

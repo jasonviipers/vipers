@@ -34,6 +34,15 @@ export const orderStatusEnum = pgEnum("order_status", [
  *  - heartbeatInterval: agent online-window (interval × 3) in fleet/feed routes
  */
 export const runtimeSettings = pgTable("runtime_settings", {
+  /**
+   * Master switch for the autonomous agent pipeline (signal → analysis →
+   * consensus → risk → execution). Default OFF: the swarm only runs when
+   * the operator explicitly enables automation in /settings. Manual runs
+   * (POST /api/agents/db/[id]/run) are unaffected.
+   */
+  automationEnabled: boolean("automation_enabled").notNull().default(false),
+  /** Seconds between automatic full-pipeline passes (bounded 60–3600). */
+  automationIntervalSec: integer("automation_interval_sec"),
   /** Default LLM provider for new strategies ("OPENAI"|"ANTHROPIC"|"GOOGLE"|"XAI"|"DEEPSEEK"). */
   defaultLlmProvider: text("default_llm_provider"),
   consensusQuorum: integer("consensus_quorum"),
@@ -122,6 +131,8 @@ export const orders = pgTable(
     detail: text("detail"),
     direction: directionEnum("direction").notNull(),
     id: uuid("id").primaryKey().defaultRandom(),
+    /** Hash of the exact capital intent submitted to execution. */
+    intentHash: text("intent_hash").notNull().default(""),
     mode: text("mode").notNull(), // "live" (OKX) or "paper" (notional book)
     positionSizePct: numeric("position_size_pct").notNull(),
     proposalId: text("proposal_id").notNull().unique(),

@@ -21,7 +21,7 @@ import {
   type ColorSchemeId,
   useColorScheme,
 } from "@/context/color-scheme-context";
-import { getStoredApiKey } from "@/lib/api-key";
+import { getStoredApiKey, isDemoSession } from "@/lib/api-key";
 import {
   DEFAULT_TERMINAL_SETTINGS,
   loadTerminalSettings,
@@ -32,19 +32,41 @@ import {
 // -- Server-enforced runtime settings (runtime_settings DB row) --------------
 
 interface RuntimeSettings {
+  automationEnabled: boolean;
+  automationIntervalSec: number;
   consensusQuorum: number;
   debugMode: boolean;
+  defaultLlmProvider: string;
   heartbeatInterval: number;
   maxDailyLossPct: number;
   maxOpenPositions: number;
 }
 
 const RUNTIME_FALLBACK: RuntimeSettings = {
+  automationEnabled: false,
+  automationIntervalSec: 300,
   consensusQuorum: 50,
   debugMode: false,
+  defaultLlmProvider: "GOOGLE",
   heartbeatInterval: 30,
   maxDailyLossPct: 3,
   maxOpenPositions: 10,
+};
+
+// ── LLM key management (GET/PUT/DELETE /api/llm/credentials) ───────────
+
+interface LlmKeyStatus {
+  hint: string | null;
+  provider: string;
+  source: "database" | "env" | null;
+}
+
+const LLM_PROVIDER_LABELS: Record<string, string> = {
+  ANTHROPIC: "ANTHROPIC",
+  DEEPSEEK: "DEEPSEEK",
+  GOOGLE: "GOOGLE",
+  OPENAI: "OPENAI",
+  XAI: "XAI",
 };
 
 // -- Section wrapper ----------------------------------------------------------
@@ -333,6 +355,206 @@ function ColorSchemeSelect({
   );
 }
 
+// ── LLM API key manager ─────────────────────────────────────────────────
+
+function LlmKeyRow({
+  provider,
+  status,
+}: {
+  provider: string;
+  status: LlmKeyStatus | undefined;
+}) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [keyValue, setKeyValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const demoSession = isDemoSession();
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["llm", "credentials"] });
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const key = getStoredApiKey();
+      const res = await fetch("/api/llm/credentials", {
+        body: JSON.stringify({ apiKey: keyValue, provider }),
+        headers: {
+          "content-type": "application/json",
+          ...(key ? { "x-api-key": key } : {}),
+        },
+        method: "PUT",
+      });
+      if (!res.ok) {
+        throw new Error(`save failed (${res.status})`);
+      }
+    },
+    onSuccess: () => {
+      setEditing(false);
+      setKeyValue("");
+      setError(null);
+      invalidate();
+    },
+    onError: (err) =>
+      setError(
+        err instanceof Error && err.message.includes("403")
+          ? "FORBIDDEN — operator key required (demo is read-only)"
+          : err instanceof Error
+            ? err.message
+            : "save failed",
+      ),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const key = getStoredApiKey();
+      const res = await fetch(`/api/llm/credentials?provider=${provider}`, {
+        headers: {
+          ...(key ? { "x-api-key": key } : {}),
+        },
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error(`delete failed (${res.status})`);
+      }
+    },
+    onSuccess: () => {
+      setEditing(false);
+      setError(null);
+      invalidate();
+    },
+    onError: (err) =>
+      setError(err instanceof Error ? err.message : "delete failed"),
+  });
+
+  const sourceLabel =
+    status?.source === "database"
+      ? "STORED"
+      : status?.source === "env"
+        ? "ENV"
+        : "NOT SET";
+
+  return (
+    <div className="flex flex-col gap-1 border-b border-border/50 pb-2 last:border-b-0">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-xs font-bold text-foreground">{provider}</span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-[9px] font-bold tracking-wider ${
+              status?.source ? "text-terminal-green" : "text-terminal-dim"
+            }`}
+          >
+            {sourceLabel}
+            {status?.hint ? ` ${status.hint}` : ""}
+          </span>
+          {demoSession ? (
+            <span className="text-[9px] font-bold tracking-wider text-terminal-amber">
+              READ-ONLY
+            </span>
+          ) : editing ? (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false);
+                setKeyValue("");
+                setError(null);
+              }}
+              className="text-[9px] font-bold text-muted-foreground hover:text-foreground"
+            >
+              CANCEL
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-[9px] font-bold tracking-wider text-terminal-green hover:text-foreground"
+            >
+              {status?.source ? "UPDATE" : "ADD KEY"}
+            </button>
+          )}
+        </div>
+      </div>
+      {editing && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex gap-1.5">
+            <input
+              type="password"
+              value={keyValue}
+              placeholder={`${provider} API key`}
+              onChange={(e) => setKeyValue(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              className="flex-1 border border-border bg-secondary px-2 py-1.5 text-xs text-foreground placeholder:text-terminal-dim focus:border-terminal-green/40 focus:outline-none"
+            />
+            <button
+              type="button"
+              disabled={saveMutation.isPending || keyValue.trim().length < 8}
+              onClick={() => saveMutation.mutate()}
+              className="border border-terminal-green/40 bg-terminal-green/10 px-3 text-[10px] font-bold tracking-wider text-terminal-green hover:bg-terminal-green/20 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {saveMutation.isPending ? "…" : "SAVE"}
+            </button>
+          </div>
+          {error && (
+            <span className="text-[10px] font-bold text-terminal-red">
+              {error}
+            </span>
+          )}
+          {status?.source === "database" && (
+            <button
+              type="button"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+              className="self-start text-[9px] font-bold tracking-wider text-terminal-red/80 hover:text-terminal-red"
+            >
+              REMOVE STORED KEY (FALL BACK TO ENV)
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LlmCredentialsSection() {
+  const { data, isError } = useQuery<LlmKeyStatus[]>({
+    queryKey: ["llm", "credentials"],
+    queryFn: async () => {
+      const res = await fetch("/api/llm/credentials");
+      if (!res.ok) {
+        throw new Error(`API ${res.status}`);
+      }
+      const payload = (await res.json()) as {
+        providers: LlmKeyStatus[];
+      };
+      return payload.providers;
+    },
+    staleTime: 10_000,
+  });
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[10px] text-muted-foreground">
+        API keys are encrypted (AES-256-GCM) on the server. The DEFAULT LLM
+        PROVIDER below resolves its key here first, then env vars.
+      </span>
+      {isError ? (
+        <span className="text-[10px] text-terminal-red">
+          KEY STATUS UNAVAILABLE — server unreachable
+        </span>
+      ) : (
+        Object.keys(LLM_PROVIDER_LABELS).map((provider) => (
+          <LlmKeyRow
+            key={provider}
+            provider={provider}
+            status={data?.find((s) => s.provider === provider)}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
 export function SettingsView() {
   const { scheme: colorScheme, setScheme: setColorScheme } = useColorScheme();
   const [settings, setSettings] = useState<TerminalSettings>(
@@ -415,6 +637,11 @@ export function SettingsView() {
       setRuntimeError(
         "UPDATE FAILED — STATE ROLLED BACK (write access required)",
       );
+    },
+    onSuccess: (savedSettings) => {
+      // Reconcile the optimistic toggle with the authoritative server response
+      // immediately; the invalidate below also refreshes other open clients.
+      queryClient.setQueryData(RUNTIME_KEY, savedSettings);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: RUNTIME_KEY });
@@ -675,6 +902,73 @@ export function SettingsView() {
                 </button>
               </div>
             </SettingsSection>
+
+            {/* Agent Automation */}
+            <SettingsSection
+              icon={Cpu}
+              title="AGENT AUTOMATION"
+              description="Server-enforced autonomous loop — the swarm runs the full pipeline on a schedule"
+            >
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-bold text-foreground">
+                      ENABLE AGENT AUTOMATION
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Runs signal → analysis → consensus → risk → execution
+                      automatically. The kill switch and risk caps still gate
+                      every order.
+                    </span>
+                    {runtimeError && (
+                      <span className="text-[10px] font-bold text-terminal-red">
+                        {runtimeError}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={
+                      runtime.automationEnabled
+                        ? "Disable agent automation"
+                        : "Enable agent automation"
+                    }
+                    aria-pressed={runtime.automationEnabled}
+                    disabled={runtimeMutation.isPending}
+                    onClick={() =>
+                      setRuntime(
+                        "automationEnabled",
+                        !runtime.automationEnabled,
+                      )
+                    }
+                    className={`shrink-0 border px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                      runtime.automationEnabled
+                        ? "border-terminal-green/40 bg-terminal-green/10 text-terminal-green"
+                        : "border-border bg-secondary text-terminal-dim"
+                    }`}
+                  >
+                    {runtime.automationEnabled ? "ENABLED" : "DISABLED"}
+                  </button>
+                </div>
+                {runtimeMutation.isPending && (
+                  <span className="text-[10px] font-bold text-terminal-cyan">
+                    SAVING AUTOMATION STATE…
+                  </span>
+                )}
+                <div className="border-t border-border pt-2">
+                  <SliderRow
+                    label="AUTOMATION INTERVAL"
+                    description="Time between automatic pipeline passes; each pass analyzes one asset in rotation (BTC → ETH → SOL → XRP → DOGE)"
+                    value={runtime.automationIntervalSec}
+                    min={60}
+                    max={3600}
+                    suffix="s"
+                    color="text-terminal-cyan"
+                    onChange={(v) => setRuntime("automationIntervalSec", v)}
+                  />
+                </div>
+              </div>
+            </SettingsSection>
           </div>
 
           {/* Column 2 */}
@@ -734,11 +1028,17 @@ export function SettingsView() {
             >
               <InlineSelect
                 label="DEFAULT LLM PROVIDER"
-                description="Pre-selected provider when creating new strategies"
-                value={settings.defaultLlm}
+                description="Live: the agent fleet's model switches to this provider on the next pipeline run (key resolved from the stored keys below, then env)"
+                value={runtime.defaultLlmProvider}
                 options={["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK"]}
-                onChange={(v) => set("defaultLlm", v)}
+                onChange={(v) => setRuntime("defaultLlmProvider", v)}
               />
+              {runtimeQuery.isError && (
+                <span className="text-[10px] text-terminal-red">
+                  SERVER UNREACHABLE — provider switching disabled
+                </span>
+              )}
+              <LlmCredentialsSection />
               <SliderRow
                 label="CONSENSUS QUORUM"
                 description="Approval percentage the COORDINATION step requires before executing a proposal"

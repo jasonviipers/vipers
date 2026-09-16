@@ -1,11 +1,10 @@
 import { eq } from "drizzle-orm";
-
+import { agentConfigs } from "@/ai/agents/config";
+import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { db } from "@/db";
 import { agentStats, agents, equitySnapshots } from "@/db/schema/agent";
 import { useLogger, withEvlog } from "@/lib/evlog";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
-import { agentConfigs } from "@/mastra/agents/config";
-import { agentRuntime } from "@/mastra/runtime/agent-runtime";
 
 export const dynamic = "force-dynamic";
 

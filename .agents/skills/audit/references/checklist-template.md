@@ -32,7 +32,7 @@ in this environment (note what would be needed).
       CONSENSUS_REACHED, RISK_APPROVED/REJECTED, ORDER_SUBMITTED/FILLED/FAILED)
 - [ ] Failure/recovery paths documented for each pipeline stage
 
-## Agents (src/mastra/agents/)
+## Agents (src/ai/agents/)
 - [ ] sentiment-agent — inputs, tools, failure handling, retry/timeout
 - [ ] technical-analysis-agent — inputs, tools, failure handling
 - [ ] reasoning-analysis-agent — LLM output schema validated (direction,
@@ -46,7 +46,7 @@ in this environment (note what would be needed).
 - [ ] Agent state/memory reviewed (does anything persist across runs that
       shouldn't, or fail to persist what should?)
 
-## Trading / risk (src/mastra/tools/, broker/)
+## Trading / risk (src/ai/tools/, broker/)
 - [ ] Market data validated before use (staleness, schema)
 - [ ] Symbol allowlist / validation
 - [ ] Order validation (size, side, type, quantity)
@@ -73,7 +73,7 @@ in this environment (note what would be needed).
       balance or position
 - [ ] Connection pooling / leak review
 
-## Caching (src/lib/redis.ts, mastra/tools/market-quote-tool.ts)
+## Caching (src/lib/redis.ts, ai/tools/market-quote-tool.ts)
 - [ ] L1 (in-process) / L2 (Redis) cache behavior confirmed
 - [ ] Redis failure confirmed fail-safe (degrades to cache miss, never throws
       into the caller)

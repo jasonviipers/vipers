@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
 import { positions } from "@/db/schema/trading";
+import { readLedgerAccountBalance } from "@/lib/capital-ledger";
 import { log } from "@/lib/evlog";
 
 /**
@@ -28,6 +29,81 @@ interface CapitalAtPoint {
   investedCapital: string;
   takenAt: Date;
   totalCapital: string;
+}
+
+export interface LedgerCapital {
+  availableCapital: number;
+  investedCapital: number;
+  openPnl: number;
+  totalCapital: number;
+}
+
+/**
+ * Derive capital from the ledger (the source of truth) plus open positions:
+ *
+ *   totalCapital     = deposits - withdrawals + realized P&L - fees + open PnL
+ *   investedCapital  = sum over OPEN positions of entry notional
+ *   availableCapital = totalCapital - investedCapital (floor 0)
+ *
+ * Shared by the snapshot rollup and the OKX balance sync so both agree on
+ * what "current capital" means.
+ */
+export async function computeLedgerCapital(): Promise<LedgerCapital> {
+  const independentCash = await readLedgerAccountBalance("assets:cash", "USDT");
+  if (independentCash !== null) {
+    const [open] = await db
+      .select({
+        openPnl: sql<string>`coalesce(sum(${positions.pnl}), '0')`,
+        invested: sql<string>`coalesce(sum(${positions.entryPrice} * ${positions.quantity}), '0')`,
+      })
+      .from(positions)
+      .where(eq(positions.status, "OPEN"));
+    const openPnl = Number(open?.openPnl ?? 0);
+    const investedCapital = Number(open?.invested ?? 0);
+    const totalCapital = independentCash + openPnl;
+    return {
+      availableCapital: Math.max(0, totalCapital - investedCapital),
+      investedCapital,
+      openPnl,
+      totalCapital,
+    };
+  }
+
+  const [flows] = await db
+    .select({
+      deposits: sql<string>`coalesce(sum(${sql.raw(
+        "case when type = 'deposit' then amount else 0 end",
+      )}), '0')`,
+      withdrawals: sql<string>`coalesce(sum(${sql.raw(
+        "case when type = 'withdrawal' then amount else 0 end",
+      )}), '0')`,
+      // Realized P&L net of fees. Deposits/withdrawals are capital flows,
+      // not P&L, so they contribute nothing here (they enter via the
+      // deposits/withdrawals columns above).
+      realizedNet: sql<string>`coalesce(sum(${sql.raw(
+        "case when type = 'realized_pnl' then amount when type = 'fee' then -amount else 0 end",
+      )}), '0')`,
+    })
+    .from(capitalTransactions);
+
+  const [open] = await db
+    .select({
+      openPnl: sql<string>`coalesce(sum(${positions.pnl}), '0')`,
+      invested: sql<string>`coalesce(sum(${positions.entryPrice} * ${positions.quantity}), '0')`,
+    })
+    .from(positions)
+    .where(eq(positions.status, "OPEN"));
+
+  const deposits = Number(flows?.deposits ?? 0);
+  const withdrawals = Number(flows?.withdrawals ?? 0);
+  const realizedNet = Number(flows?.realizedNet ?? 0);
+  const openPnl = Number(open?.openPnl ?? 0);
+  const investedCapital = Number(open?.invested ?? 0);
+
+  const totalCapital = deposits - withdrawals + realizedNet + openPnl;
+  const availableCapital = Math.max(0, totalCapital - investedCapital);
+
+  return { availableCapital, investedCapital, openPnl, totalCapital };
 }
 
 /**
@@ -145,38 +221,8 @@ export async function runPortfolioSnapshotJob(): Promise<void> {
   // The job runs on an interval (outside any request scope), so it uses the
   // global `log` API rather than the request-scoped useLogger().
   try {
-    // Net deposited capital: deposits minus withdrawals (fees are P&L).
-    const [flows] = await db
-      .select({
-        deposits: sql<string>`coalesce(sum(${sql.raw(
-          "case when type = 'deposit' then amount else 0 end",
-        )}), '0')`,
-        withdrawals: sql<string>`coalesce(sum(${sql.raw(
-          "case when type = 'withdrawal' then amount else 0 end",
-        )}), '0')`,
-        realized: sql<string>`coalesce(sum(${sql.raw(
-          "case when type = 'realized_pnl' then amount else -amount end",
-        )}), '0')`,
-      })
-      .from(capitalTransactions);
-
-    const [open] = await db
-      .select({
-        openPnl: sql<string>`coalesce(sum(${positions.pnl}), '0')`,
-        // Invested notional: entry price * quantity per open position.
-        invested: sql<string>`coalesce(sum(${positions.entryPrice} * ${positions.quantity}), '0')`,
-      })
-      .from(positions)
-      .where(eq(positions.status, "OPEN"));
-
-    const deposits = Number(flows?.deposits ?? 0);
-    const withdrawals = Number(flows?.withdrawals ?? 0);
-    const realizedNet = Number(flows?.realized ?? 0);
-    const openPnl = Number(open?.openPnl ?? 0);
-    const investedCapital = Number(open?.invested ?? 0);
-
-    const totalCapital = deposits - withdrawals + realizedNet + openPnl;
-    const availableCapital = Math.max(0, totalCapital - investedCapital);
+    const { availableCapital, investedCapital, totalCapital } =
+      await computeLedgerCapital();
 
     // Hour bucket: update-in-place keeps the rollup idempotent per hour.
     const hourStart = new Date();

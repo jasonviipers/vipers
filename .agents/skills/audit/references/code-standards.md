@@ -6,12 +6,12 @@ it will have evolved since this was written.
 
 ## Stack
 
-Next.js (App Router) · Mastra (agent framework) · Drizzle ORM over Postgres ·
+Next.js (App Router) · Vercel AI SDK · Drizzle ORM over Postgres ·
 TanStack Query · Tailwind · shadcn/ui · Bun as the package manager/runtime.
 
 ## The consensus pipeline
 
-The core of the system is `src/mastra/workflows/consensus-workflow.ts` — a
+The core of the system is `src/ai/workflows/consensus-workflow.ts` — a
 five-stage pipeline that runs for every candidate trade (asset + source, e.g.
 `BTC-USD`, `"manual"`):
 
@@ -69,7 +69,7 @@ Market quotes are cached in two layers to protect upstream APIs
 
 Redis is fail-safe by design: any Redis error degrades to a cache miss, it
 never throws up into the caller. See `src/lib/redis.ts` and
-`src/mastra/tools/market-quote-tool.ts`. If you touch caching, preserve the
+`src/ai/tools/market-quote-tool.ts`. If you touch caching, preserve the
 fail-safe property — a cache outage should never become a trading outage.
 
 ## Background jobs
@@ -122,8 +122,8 @@ src/
     leaderboard-score.ts    Composite score + activity floor
     evlog.ts                Structured logging (wide events)
     …                       auth, api-key, formatting, terminal settings
-  mastra/                   The agent swarm
-    agents/                 Agent configs + bound Mastra Agent instances
+  ai/                      The agent swarm
+    agents/                 Agent configs + AI SDK-backed agent instances
     tools/                  market data, sentiment, technicals, risk,
                              execution, StockTwits
     workflows/              consensus-workflow.ts

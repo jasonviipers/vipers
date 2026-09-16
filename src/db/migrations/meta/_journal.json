@@ -5,57 +5,43 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1789342846681,
-      "tag": "0000_melted_kid_colt",
+      "when": 1789550238573,
+      "tag": "0000_capital_engine_baseline",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1789344065936,
-      "tag": "0001_fair_blue_blade",
+      "when": 1789551234000,
+      "tag": "0001_capital_engine_upgrade",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1789369627577,
-      "tag": "0002_tense_tony_stark",
+      "when": 1789551081361,
+      "tag": "0002_promotion_registry",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1789370297591,
-      "tag": "0003_worthless_hammerhead",
+      "when": 1789552548461,
+      "tag": "0003_decision_ledger",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1789373871589,
-      "tag": "0004_tough_the_enforcers",
+      "when": 1789554121661,
+      "tag": "0004_ledger_audit_surfaces",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1789374321423,
-      "tag": "0005_minor_kang",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1789398903171,
-      "tag": "0006_neat_doctor_doom",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1789399571207,
-      "tag": "0007_charming_chat",
+      "when": 1789555377143,
+      "tag": "0005_decision_metadata",
       "breakpoints": true
     }
   ]

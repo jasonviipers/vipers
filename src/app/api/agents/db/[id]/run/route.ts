@@ -1,15 +1,15 @@
-import { useLogger, withEvlog } from "@/lib/evlog";
-import { requireWriteAccess } from "@/lib/route-auth";
-import { parseTradeProposal } from "@/mastra/agents/trade-proposal";
-import { reasoningAnalysisAgent } from "@/mastra/agents/trading-agents";
+import { parseTradeProposal } from "@/ai/agents/trade-proposal";
+import { reasoningAnalysisAgent } from "@/ai/agents/trading-agents";
 import {
   type AnalysisProposed,
   newId,
   type SignalCreated,
-} from "@/mastra/events/contracts";
-import { agentRuntime } from "@/mastra/runtime/agent-runtime";
-import { fetchMarketSignals } from "@/mastra/tools/market-signals-tool";
-import { fetchTechnicals } from "@/mastra/tools/technical-analysis-tool";
+} from "@/ai/events/contracts";
+import { agentRuntime } from "@/ai/runtime/agent-runtime";
+import { fetchMarketSignals } from "@/ai/tools/market-signals-tool";
+import { fetchTechnicals } from "@/ai/tools/technical-analysis-tool";
+import { useLogger, withEvlog } from "@/lib/evlog";
+import { requireWriteAccess } from "@/lib/route-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -112,12 +112,14 @@ Decide LONG, SHORT, or ABSTAIN with a confidence 0-1 and a short rationale. Repl
 
       const parsed = parseTradeProposal(reasoning.text);
 
-      // LLM output is untrusted: only an explicit LONG/SHORT counts.
-      // ABSTAIN or unparsable output means NO proposal — the UI must not
-      // receive a paper-trade suggestion the model never made.
-      if (!parsed) {
+      // LLM output is untrusted: only an explicit LONG/SHORT counts for
+      // this analysis-only endpoint. The full workflow persists ABSTAIN as
+      // NO_TRADE; this endpoint has no durable evidence bundle yet.
+      if (!parsed || parsed.direction === "ABSTAIN") {
         logger.set({
-          warning: "reasoning agent abstained or returned unparsable output",
+          warning: parsed
+            ? "reasoning agent returned an explicit abstention"
+            : "reasoning agent returned unparsable output",
         });
         return Response.json({ proposals: [] } satisfies RunResponse);
       }

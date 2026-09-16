@@ -218,11 +218,16 @@ export function ConsensusView() {
     [proposals],
   );
 
-  // Voting pool: analysis/risk/coordination teams participate in consensus.
+  // Voting pool: ONLY agents that actually participated in the pipeline —
+  // a configured agent sitting idle (no heartbeat → not online) has no vote
+  // this session, so counting it would inflate the voter total. Online is
+  // derived from a recent heartbeat, i.e. the agent "made it" to this run.
   const voterCount = useMemo(
     () =>
-      (fleet?.items ?? []).filter((agent) =>
-        ["ANALYSIS", "RISK", "COORDINATION"].includes(agent.team),
+      (fleet?.items ?? []).filter(
+        (agent) =>
+          agent.status === "online" &&
+          ["ANALYSIS", "RISK", "COORDINATION"].includes(agent.team),
       ).length,
     [fleet],
   );

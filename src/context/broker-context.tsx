@@ -15,8 +15,18 @@ export type BrokerStatus = "connected" | "disconnected" | "pending" | "error";
 
 export type BrokerAccountType = "stocks" | "crypto" | "multi-asset";
 
+/** Active credential-auth health from GET /api/broker/status. */
+export interface BrokerAuthHealth {
+  checkedAt: string;
+  hint?: string;
+  healthy: boolean;
+  okxCode?: string;
+  reason?: string;
+}
+
 /** Server-derived broker state from GET /api/broker/status. */
 export interface BrokerServerStatus {
+  auth?: BrokerAuthHealth;
   credentials: { apiKey: boolean; passphrase: boolean; secret: boolean };
   id: string;
   mode: "live" | "paper";
@@ -35,11 +45,11 @@ export interface BrokerAccount {
 }
 
 /**
- * Static broker catalog. Broker connection is decided SERVER-side by
- * environment configuration (see GET /api/broker/status and the execution
- * tool's routing rule) — there is no user-typed-key connect flow. The only
- * operator-controlled state is `tradingEnabled`, a local kill-switch-style
- * opt-in persisted here.
+ * Static broker catalog. Broker connection is decided SERVER-side by the
+ * stored credentials (broker_credentials table — see GET /api/broker/status
+ * and the execution tool's routing rule). The operator connects a broker
+ * by saving credentials in the /settings panel; `tradingEnabled` is an
+ * additional local opt-in persisted here.
  */
 export const BROKER_CATALOG: Omit<BrokerAccount, "tradingEnabled">[] = [
   {
@@ -48,7 +58,7 @@ export const BROKER_CATALOG: Omit<BrokerAccount, "tradingEnabled">[] = [
     shortName: "OKX",
     accountType: "crypto",
     description:
-      "Spot trading on USDT-quoted majors. Routing is decided server-side: OKX when credentials are configured via environment variables (OKX_DEMO=true for the paper endpoints), otherwise the paper book.",
+      "Spot trading on USDT-quoted majors. Save your OKX API credentials in this panel (encrypted server-side); DEMO mode routes through OKX paper endpoints, LIVE mode trades real capital.",
     supportedAssets: ["BTC", "ETH", "SOL", "XRP", "DOGE"],
   },
   {

@@ -20,3 +20,13 @@ export function storeApiKey(key: string): void {
 export function clearStoredApiKey(): void {
   sessionStorage.removeItem(STORAGE_KEY);
 }
+
+/**
+ * True when the current session authenticated with the shared demo key.
+ * Demo sessions are READ-ONLY server-side (requireWriteAccess → 403); the
+ * UI uses this to disable credential-management controls up front instead
+ * of letting writes fail with an opaque error.
+ */
+export function isDemoSession(): boolean {
+  return getStoredApiKey() === DEMO_API_KEY;
+}

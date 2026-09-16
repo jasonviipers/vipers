@@ -1,3 +1,4 @@
+import "server-only";
 /**
  * Secret box: symmetric encryption for secrets stored server-side in the
  * database (broker API credentials, LLM API keys).

@@ -54,7 +54,7 @@ export function TerminalLayout({ children }: { children: React.ReactNode }) {
       onPointerDown={unlockAudio}
       data-animations={animations ? "on" : "off"}
       className={`flex h-screen flex-col overflow-hidden bg-background ${
-        compact ? "[&_span]:!text-[11px]" : ""
+        compact ? "[&_span]:!text-[11px]!" : ""
       }`}
     >
       {tickerEnabled && <TickerBar />}

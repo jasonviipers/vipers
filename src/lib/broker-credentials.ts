@@ -135,6 +135,36 @@ export async function deleteBrokerCredentials(brokerId: string): Promise<void> {
   invalidate(brokerId);
 }
 
+export interface UpdateBrokerSettingsInput {
+  mode?: "demo" | "live";
+  region?: "default" | "eea" | "us";
+}
+
+/**
+ * Update mode/region WITHOUT touching the stored secrets. Flipping the
+ * execution environment (e.g. after OKX reports a 50101 key/environment
+ * mismatch) must not require re-typing the API key, secret and passphrase —
+ * those are never returned to the browser, so a mode-only switch is the
+ * only one-click fix. No-op when the row does not exist.
+ */
+export async function updateBrokerSettings(
+  brokerId: string,
+  input: UpdateBrokerSettingsInput,
+): Promise<void> {
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  if (input.mode) {
+    set.mode = input.mode;
+  }
+  if (input.region) {
+    set.region = input.region;
+  }
+  await db
+    .update(brokerCredentials)
+    .set(set)
+    .where(eq(brokerCredentials.id, brokerId));
+  invalidate(brokerId);
+}
+
 /** True when the broker has a usable, decryptable credential row. */
 export async function isBrokerConfigured(brokerId: string): Promise<boolean> {
   return (await getBrokerCredentials(brokerId)) !== null;

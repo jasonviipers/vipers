@@ -1,5 +1,5 @@
 import { desc, eq, sql } from "drizzle-orm";
-
+import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { db } from "@/db";
 import { agents } from "@/db/schema/agent";
 import { consensusProposals, consensusVotes } from "@/db/schema/consensus";
@@ -8,7 +8,6 @@ import type {
   ConsensusProposal,
   ConsensusProposalsResponse,
 } from "@/lib/queries/consensus";
-import { agentRuntime } from "@/mastra/runtime/agent-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -98,7 +97,7 @@ export const GET = withEvlog(async () => {
     >();
 
     for (const event of agentRuntime.listRecentEvents(200)) {
-      if (event.type === "ANALYSIS_PROPOSED") {
+      if (event.type === "ANALYSIS_PROPOSED" && event.direction !== "ABSTAIN") {
         proposalEvents.set(event.proposalId, {
           asset: event.asset,
           confidence: event.confidence,

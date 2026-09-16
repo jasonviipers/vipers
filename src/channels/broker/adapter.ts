@@ -13,6 +13,7 @@ import type { OKXWebSocketClient } from "../okx/websocket";
 export interface BrokerOrderResult {
   clientOrderId: string;
   detail?: string;
+  entryPrice?: number;
   filled?: boolean;
   orderId: string;
   quantity: number;
@@ -28,6 +29,12 @@ export interface BrokerAdapter {
     direction: "LONG" | "SHORT",
     positionSizePct: number,
     proposalId: string,
+  ) => Promise<BrokerOrderResult>;
+  placeProtectiveReduction: (
+    asset: string,
+    currentDirection: "LONG" | "SHORT",
+    positionSizePct: number,
+    positionId: string,
   ) => Promise<BrokerOrderResult>;
   websocket?: {
     connect: () => void;
@@ -138,6 +145,7 @@ export async function placeMarketOrder(
     return {
       clientOrderId: response.clOrdId,
       detail: reconciled.detail,
+      entryPrice: reconciled.entryPrice,
       filled: reconciled.filled,
       orderId: response.ordId,
       quantity: reconciled.quantity ?? size,
@@ -165,6 +173,7 @@ async function reconcileFill(
   intervalMs = 1500,
 ): Promise<{
   detail?: string;
+  entryPrice?: number;
   filled?: boolean;
   quantity: number;
   status: "FILLED" | "FAILED";
@@ -182,6 +191,7 @@ async function reconcileFill(
         detail: `Filled ${lastFillSz} ${instrumentId} @ ${
           order.avgPx || "market"
         }`,
+        entryPrice: Number(order.avgPx),
         filled: true,
         quantity: lastFillSz,
         status: "FILLED",
@@ -291,6 +301,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export async function placeProtectiveReduction(
+  asset: string,
+  currentDirection: "LONG" | "SHORT",
+  positionSizePct: number,
+  positionId: string,
+): Promise<BrokerOrderResult> {
+  if (!(positionSizePct > 0 && positionSizePct <= 100)) {
+    throw new Error(
+      "Protective reduction size must be between 0 and 100 percent",
+    );
+  }
+  const reductionDirection = currentDirection === "LONG" ? "SHORT" : "LONG";
+  return placeMarketOrder(
+    asset,
+    reductionDirection,
+    positionSizePct,
+    `protective_${positionId}`,
+  );
+}
+
 export function createBrokerAdapter(
   websocket?: OKXWebSocketClient,
 ): BrokerAdapter {
@@ -298,6 +328,7 @@ export function createBrokerAdapter(
     getBalance: okxClient.getBalance,
     getPositions: okxClient.getPositions,
     placeMarketOrder,
+    placeProtectiveReduction,
     websocket: websocket
       ? {
           close: () => websocket.close(),

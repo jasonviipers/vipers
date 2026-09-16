@@ -5,7 +5,6 @@ const nextConfig: NextConfig = {
   typedRoutes: true,
   reactCompiler: true,
   output: "standalone",
-  serverExternalPackages: ["@mastra/*"],
   experimental: {
     useTypeScriptCli: true,
   },
