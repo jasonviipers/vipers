@@ -1,3 +1,4 @@
+import "server-only";
 import { createHmac, randomUUID } from "node:crypto";
 
 import { createOKXConfig } from "./config";

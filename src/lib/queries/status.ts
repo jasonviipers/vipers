@@ -14,9 +14,19 @@ export interface PortfolioSummaryData {
   weeklyPnl: number;
 }
 
+export interface LlmUsageData {
+  todayCost: number;
+  todayInputTokens: number;
+  todayOutputTokens: number;
+  totalCost: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+}
+
 export interface StatusResponse {
   agents: { online: number; total: number };
   broker: { shortName: string; status: "connected" | "paper" };
+  llm: LlmUsageData;
   portfolio: PortfolioSummaryData;
 }
 

@@ -1,6 +1,9 @@
+import { randomUUID } from "node:crypto";
+
 import { generateText, type ToolSet } from "ai";
 
 import { resolveActiveModel } from "@/lib/llm-model";
+import { recordLlmUsage } from "@/lib/llm-usage";
 import {
   analyzeTechnicalsTool,
   evaluateRiskTool,
@@ -32,6 +35,7 @@ export class TradingAgent {
   ) {}
 
   async generate(prompt: string): Promise<AgentGenerateResult> {
+    const correlationId = randomUUID();
     const result = await generateText({
       model: await resolveActiveModel(),
       instructions: this.instructions,
@@ -40,6 +44,19 @@ export class TradingAgent {
       maxOutputTokens: 600,
       timeout: { totalMs: 45_000 },
     });
+
+    const usage = result.usage;
+    if (usage) {
+      recordLlmUsage({
+        agentId: this.id,
+        correlationId,
+        inputTokens: usage.inputTokens ?? 0,
+        model: result.response?.modelId ?? "unknown",
+        outputTokens: usage.outputTokens ?? 0,
+        totalTokens: usage.totalTokens ?? 0,
+      });
+    }
+
     return { text: result.text };
   }
 }

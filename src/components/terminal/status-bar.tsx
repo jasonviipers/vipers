@@ -9,9 +9,10 @@ import { fmtDollar } from "@/lib/format";
 import { statusQueries } from "@/lib/queries/status";
 
 /**
- * Terminal footer: agent fleet counts, open-position PnL, active broker
- * and a UTC clock. Live data via /api/status (30s poll); a "--" placeholder
- * keeps the layout stable while loading or if the DB is unreachable.
+ * Terminal footer: agent fleet counts, open-position PnL, LLM spend,
+ * active broker and a UTC clock. Live data via /api/status (30s poll);
+ * a "--" placeholder keeps the layout stable while loading or if the DB
+ * is unreachable.
  */
 export function StatusBar() {
   const { data, isError } = useQuery(statusQueries.summary());
@@ -25,6 +26,8 @@ export function StatusBar() {
     shortName: "--",
     status: "disconnected" as const,
   };
+  const todayLlmCost = data?.llm.todayCost ?? 0;
+  const totalLlmCost = data?.llm.totalCost ?? 0;
 
   const pnlPositive = totalPnl >= 0;
 
@@ -56,6 +59,17 @@ export function StatusBar() {
               value={totalPnl}
               format={(n) => `${n >= 0 ? "+" : "-"}${fmtDollar(Math.abs(n))}`}
             />
+          )}
+        </span>
+        <span className="hidden text-muted-foreground sm:inline">|</span>
+        <span className="hidden shrink-0 text-muted-foreground sm:inline">
+          LLM:{" "}
+          {isError ? (
+            "--"
+          ) : (
+            <span className="text-terminal-yellow">
+              {fmtDollar(todayLlmCost)} / {fmtDollar(totalLlmCost)}
+            </span>
           )}
         </span>
         <span className="hidden text-muted-foreground sm:inline">|</span>

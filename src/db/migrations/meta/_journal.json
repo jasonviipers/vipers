@@ -43,6 +43,13 @@
       "when": 1789555377143,
       "tag": "0005_decision_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789570116280,
+      "tag": "0006_majestic_ravenous",
+      "breakpoints": true
     }
   ]
 }

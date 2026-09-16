@@ -14,6 +14,7 @@ import {
   CONSENSUS_PLUGIN_SOURCE,
   runIsolatedPluginSource,
 } from "@/ai/capital-engine/plugin-runtime";
+import { registerStrategyPlugin } from "@/lib/promotion-records";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
 import { riskAgentConfig } from "../agents/config";
 import { parseTradeProposal } from "../agents/trade-proposal";
@@ -80,6 +81,8 @@ export async function runConsensusWorkflow(
     type: "ANALYSIS_PROPOSED",
   };
   await publishAgentEvent(proposal);
+
+  await registerStrategyPlugin(CONSENSUS_PLUGIN_MANIFEST);
 
   const decisionInputs = {
     consensus: {

@@ -430,11 +430,11 @@ export function LeaderboardView() {
       (data?.items ?? []).map(resolveScore).sort((a, b) => b.score - a.score),
     [data],
   );
-  const hasPersistedScores = ranked.some((a) => !a.provisional);
-  const minTradesShown = ranked.reduce(
-    (min, a) => Math.min(min, a.stats.trades),
-    Number.POSITIVE_INFINITY,
-  );
+  // const hasPersistedScores = ranked.some((a) => !a.provisional);
+  // const minTradesShown = ranked.reduce(
+  //   (min, a) => Math.min(min, a.stats.trades),
+  //   Number.POSITIVE_INFINITY,
+  // );
 
   const champion = ranked[0];
   const second = ranked[1];
@@ -495,7 +495,7 @@ export function LeaderboardView() {
           </div>
         ) : (
           <div className="p-3 sm:p-4">
-            {hasPersistedScores ? null : (
+            {/*{hasPersistedScores ? null : (
               <div className="mb-3 border border-terminal-amber/30 bg-terminal-amber/5 px-3 py-1.5 text-[10px] text-terminal-amber">
                 {"// "}PROVISIONAL RANKING — scores not yet persisted by the
                 leaderboard job; the activity floor still applies
@@ -506,7 +506,7 @@ export function LeaderboardView() {
                 {"// "}AGENTS UNDER {MIN_TRADES} CLOSED TRADES ARE SCORE-SCALED
                 DOWN (ACTIVITY FLOOR)
               </div>
-            )}
+            )}*/}
             {/* Top 3 cards */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
               {champion && <ChampionCard agent={champion} rank={1} />}

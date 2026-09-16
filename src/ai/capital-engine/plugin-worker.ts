@@ -1,5 +1,6 @@
-import { Worker } from "node:worker_threads";
+import "server-only";
 
+import { Worker } from "node:worker_threads";
 import type { StrategyPluginManifest } from "./plugin";
 import type { PluginDecision, StrategyEvidenceInput } from "./plugin-runtime";
 

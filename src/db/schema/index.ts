@@ -2,6 +2,7 @@ export * from "./agent";
 export * from "./audit";
 export * from "./auth";
 export * from "./consensus";
+export * from "./llm-usage";
 export * from "./portfolio";
 export * from "./risk";
 export * from "./signals";

@@ -4,7 +4,7 @@ export const { register, onRequestError } = defineNodeInstrumentation(
   () => import("./src/lib/evlog"),
 );
 
-if (!process.env.NEXT_RUNTIME?.includes("edge")) {
+if (process.env.NEXT_RUNTIME === "nodejs") {
   // Agent automation heartbeat: a short fixed tick reads the operator's
   // automation setting + interval from the DB every 15s and triggers a full
   // consensus-workflow pass when due. Default OFF; enabling it in /settings

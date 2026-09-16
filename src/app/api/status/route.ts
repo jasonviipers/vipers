@@ -6,6 +6,7 @@ import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
 import { positions } from "@/db/schema/trading";
 import { getBrokerCredentials } from "@/lib/broker-credentials";
 import { useLogger, withEvlog } from "@/lib/evlog";
+import { llmUsageSummary } from "@/lib/llm-usage";
 
 export const dynamic = "force-dynamic";
 
@@ -144,9 +145,29 @@ export const GET = withEvlog(async () => {
     // DB hiccup: keep the paper-book default instead of failing the payload.
   }
 
+  // --- LLM usage / cost ---------------------------------------------------
+  let llm = {
+    todayCost: 0,
+    todayInputTokens: 0,
+    todayOutputTokens: 0,
+    totalCost: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+  };
+  try {
+    llm = await llmUsageSummary();
+  } catch (error) {
+    logger.set({
+      warning: `llm usage unavailable: ${
+        error instanceof Error ? error.message : "unknown"
+      }`,
+    });
+  }
+
   return Response.json({
     agents: { online: agentOnline, total: agentTotal },
     broker,
+    llm,
     portfolio: {
       availableCapital,
       dailyPnl,

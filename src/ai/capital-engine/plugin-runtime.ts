@@ -4,13 +4,13 @@ import {
   validateCapitalDecision,
 } from "./intent";
 import {
-  runPluginSourceInIsolatedWorker,
-  validateInIsolatedWorker,
-} from "./plugin-worker";
-import {
   type StrategyPluginManifest,
   validateStrategyPluginManifest,
 } from "./plugin";
+import {
+  runPluginSourceInIsolatedWorker,
+  validateInIsolatedWorker,
+} from "./plugin-worker";
 
 export interface StrategyEvidenceInput {
   asset: string;
@@ -39,14 +39,25 @@ export async function runIsolatedPluginSource(input: {
   source: string;
 }): Promise<PluginDecision> {
   const manifest = validateStrategyPluginManifest(input.manifest);
-  const decision = await runPluginSourceInIsolatedWorker({
-    evidence: input.evidence,
-    input: input.input,
-    manifest,
-    pluginId: input.pluginId,
-    source: input.source,
-  });
-  return validateCapitalDecision(decision);
+  const decision = validateCapitalDecision(
+    await runPluginSourceInIsolatedWorker({
+      evidence: input.evidence,
+      input: input.input,
+      manifest,
+      pluginId: input.pluginId,
+      source: input.source,
+    }),
+  );
+  if (decision.strategyVersion !== manifest.pluginVersion) {
+    throw new Error("plugin version mismatch");
+  }
+  if (
+    decision.asset !== input.evidence.asset ||
+    decision.signalId !== input.evidence.signalId
+  ) {
+    throw new Error("plugin evidence identity mismatch");
+  }
+  return decision;
 }
 
 export async function runIsolatedStrategyPlugin(input: {

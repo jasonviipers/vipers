@@ -27,7 +27,7 @@ Use this checklist as the implementation gate. Do not enable real capital until 
 
 - [x] Create a registry for plugin IDs, versions, capabilities, and required evidence. (Owner metadata remains pending.)
 - [x] Make plugin versions/config hashes immutable after publication.
-- [~] Add a capability-limited plugin runtime exposing evidence and validated intent output only (`src/ai/capital-engine/plugin-runtime.ts`); module-level import enforcement remains pending.
+- [x] Prevent plugins from importing broker credentials, ledger writers, or arbitrary network clients through worker isolation (`src/ai/capital-engine/plugin-worker.ts`), a static import gate (`scripts/check-plugin-boundary.ts`), and the passing adversarial plugin tests in `test/ai/capital-engine/plugin-runtime.test.ts`.
 - [x] Require plugin manifests and capital intents to pass schema validation.
 - [ ] Require deterministic fixtures for every plugin.
 - [ ] Persist plugin commit/config/model/provider metadata with each decision.
@@ -141,7 +141,7 @@ Use this checklist as the implementation gate. Do not enable real capital until 
 - [x] Focused unit tests pass for proposal parsing, intent hashing, risk kernel, ledger balancing, promotion, plugin contracts, plugin runtime, and execution-mode separation. (Full reconciliation integration coverage remains pending; latest run: 59 passed.)
 - [ ] Integration tests pass with a test database and mocked venue.
 - [x] Replay can reconstruct and integrity-check a decision from stored evidence. (It is not an execution authorization path.)
-- [~] The runtime boundary exposes no custody or ledger APIs and validates plugin output; static/module-level enforcement and integration coverage remain pending.
+- [x] The active consensus path registers `consensus-v1` and executes its plugin source through the isolated worker before risk/execution; forbidden imports are rejected by runtime and static checks. Broader plugin registry integration coverage remains pending.
 
 ### Must pass before paper mode
 
@@ -180,7 +180,7 @@ Use this checklist as the implementation gate. Do not enable real capital until 
 6. [ ] Simulator/replay/shadow/paper mode contracts.
 7. [x] Promotion and rollback workflow foundation.
 8. [ ] Reconciliation and operational alerts. (Append-only reconciliation/order-event primitives are implemented; operational alerts remain pending.)
-9. [ ] First strategy migration into the plugin boundary.
+9. [~] Consensus strategy registration and isolated-worker routing are implemented; additional strategy implementations and full registry integration tests remain pending.
 10. [ ] Canary capital only after all gates above are signed off.
 
 ## Sign-off record
