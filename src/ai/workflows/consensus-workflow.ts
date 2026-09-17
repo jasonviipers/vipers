@@ -10,6 +10,7 @@ import {
   hashCapitalIntent,
 } from "@/ai/capital-engine/intent";
 import {
+  CONSENSUS_PLUGIN_FIXTURES,
   CONSENSUS_PLUGIN_MANIFEST,
   CONSENSUS_PLUGIN_SOURCE,
 } from "@/ai/capital-engine/plugin-runtime";
@@ -87,9 +88,12 @@ export async function runConsensusWorkflow(
 
   // The workflow supplies plugin IDENTITY, never source: the registry
   // resolves the immutable source bound to (pluginId, configHash) and runs
-  // it through the isolated worker realm. Persisting the manifest row via
-  // the DB-backed registerStrategyPlugin keeps promotion-lineage parity.
+  // it through the isolated worker realm. Registration replays the plugin's
+  // deterministic fixtures through the runtime before the row is persisted.
+  // Persisting the manifest row via the DB-backed registerStrategyPlugin
+  // keeps promotion-lineage parity.
   await registerStrategyPluginSource({
+    fixtures: CONSENSUS_PLUGIN_FIXTURES,
     manifest: CONSENSUS_PLUGIN_MANIFEST,
     onFirstRegister: (manifest) => registerStrategyPlugin(manifest),
     source: CONSENSUS_PLUGIN_SOURCE,

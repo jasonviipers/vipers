@@ -1,7 +1,11 @@
 import "server-only";
 
+import { canonicalise } from "./canonical-json";
+import { validateCapitalDecision } from "./intent";
 import {
+  type StrategyPluginFixture,
   type StrategyPluginManifest,
+  validateStrategyPluginFixtures,
   validateStrategyPluginManifest,
 } from "./plugin";
 import { assertPluginSourceSafe } from "./plugin-boundary";
@@ -35,6 +39,7 @@ import {
  */
 
 interface RegisteredPlugin {
+  fixtures: StrategyPluginFixture[];
   manifest: StrategyPluginManifest;
   registeredAt: string;
   source: string;
@@ -43,11 +48,71 @@ interface RegisteredPlugin {
 /** In-process registry; entries are immutable once registered. */
 const registry = new Map<string, RegisteredPlugin>();
 
+/**
+ * Registration-time determinism proof: every fixture is replayed N times
+ * through the REAL isolated worker realm and must reproduce the recorded
+ * decision byte-for-byte (canonical JSON equality) on every repetition.
+ * This is what makes "deterministic fixtures" a gate rather than a label —
+ * a plugin whose output drifts (time, randomness, identity smuggling) is
+ * not registrable.
+ */
+const FIXTURE_REPETITIONS = 3;
+
+async function assertFixturesDeterministic(
+  pluginId: string,
+  source: string,
+  fixtures: StrategyPluginFixture[],
+  pluginVersion: string,
+): Promise<void> {
+  for (const fixture of fixtures) {
+    // The recording itself must be a well-formed decision that claims the
+    // version being registered — a fixture bound to another version would
+    // silently certify behavior this plugin version does not have.
+    const recorded = validateCapitalDecision(fixture.expectedDecision);
+    if (recorded.strategyVersion !== pluginVersion) {
+      throw new Error(
+        `plugin ${pluginId} fixture "${fixture.name}" records strategyVersion "${recorded.strategyVersion}", but the manifest registers "${pluginVersion}"`,
+      );
+    }
+    let firstCanonical: string | undefined;
+    for (let attempt = 0; attempt < FIXTURE_REPETITIONS; attempt++) {
+      const decision = await runIsolatedPluginSource({
+        evidence: fixture.evidence,
+        input: fixture.input,
+        manifest: { pluginVersion },
+        pluginId,
+        source,
+      });
+      const canonical = canonicalise(decision);
+      if (firstCanonical === undefined) {
+        firstCanonical = canonical;
+      } else if (canonical !== firstCanonical) {
+        throw new Error(
+          `plugin ${pluginId} fixture "${fixture.name}" is not deterministic (repetition ${attempt + 1} diverged)`,
+        );
+      }
+    }
+    const expectedCanonical = canonicalise(recorded);
+    if (firstCanonical !== expectedCanonical) {
+      throw new Error(
+        `plugin ${pluginId} fixture "${fixture.name}" does not reproduce its recorded decision`,
+      );
+    }
+  }
+}
+
 function registryKey(pluginId: string, configHash: string): string {
   return `${pluginId}@${configHash}`;
 }
 
 export interface RegisterPluginInput {
+  /**
+   * Deterministic (input → expected decision) pairs covering the plugin's
+   * behavior paths. Required: they are replayed through the isolated
+   * runtime at registration, and registration fails if the plugin cannot
+   * reproduce them exactly.
+   */
+  fixtures: unknown;
   /** Called once on first registration (e.g. persist the manifest row). */
   onFirstRegister?: (manifest: StrategyPluginManifest) => Promise<void>;
   source: string;
@@ -57,6 +122,7 @@ export async function registerStrategyPluginSource(
   input: RegisterPluginInput & { manifest: unknown },
 ): Promise<StrategyPluginManifest> {
   const manifest = validateStrategyPluginManifest(input.manifest);
+  const fixtures = validateStrategyPluginFixtures(input.fixtures);
 
   // Layer 2 (second layer, at registration): static import scan.
   assertPluginSourceSafe(input.source);
@@ -72,11 +138,21 @@ export async function registerStrategyPluginSource(
     return existing.manifest;
   }
 
+  // Determinism gate BEFORE the row is persisted: a plugin that cannot
+  // reproduce its fixtures never reaches the registry or the DB.
+  await assertFixturesDeterministic(
+    manifest.pluginId,
+    input.source,
+    fixtures,
+    manifest.pluginVersion,
+  );
+
   if (input.onFirstRegister) {
     await input.onFirstRegister(manifest);
   }
 
   registry.set(key, {
+    fixtures,
     manifest,
     registeredAt: new Date().toISOString(),
     source: input.source,
@@ -96,6 +172,45 @@ export function isPluginRegistered(
 ): boolean {
   const registered = registry.get(registryKey(pluginId, configHash));
   return registered !== undefined && registered.source === source;
+}
+
+/**
+ * Drift check: re-run every registered fixture through the isolated realm
+ * and confirm the plugin still decides byte-for-byte as at registration.
+ * Called by the promotion gate before every stage advance (and usable on a
+ * schedule) to detect runtime/environment changes that silently alter
+ * plugin behavior. Pass expectedPluginVersion to refuse execution if the
+ * registered version has moved since the caller last verified.
+ *
+ * Returns the registered manifest on success (so gated callers can echo
+ * the exact verified identity into lineage records).
+ */
+export async function verifyPluginFixtures(
+  pluginId: string,
+  configHash: string,
+  expectedPluginVersion?: string,
+): Promise<StrategyPluginManifest> {
+  const registered = registry.get(registryKey(pluginId, configHash));
+  if (!registered) {
+    throw new Error(
+      `plugin ${pluginId}@${configHash} is not registered; nothing to verify`,
+    );
+  }
+  if (
+    expectedPluginVersion !== undefined &&
+    registered.manifest.pluginVersion !== expectedPluginVersion
+  ) {
+    throw new Error(
+      `plugin ${pluginId}@${configHash} registered version ${registered.manifest.pluginVersion} does not match the requested ${expectedPluginVersion}; re-register or correct the request`,
+    );
+  }
+  await assertFixturesDeterministic(
+    pluginId,
+    registered.source,
+    registered.fixtures,
+    registered.manifest.pluginVersion,
+  );
+  return registered.manifest;
 }
 
 /**
