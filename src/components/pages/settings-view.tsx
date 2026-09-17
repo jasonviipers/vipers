@@ -510,6 +510,105 @@ function LlmKeyRow({
   );
 }
 
+interface AgentLlmConfig {
+  agentId: string;
+  codename: string;
+  providerOverride: string | null;
+  team: string;
+}
+
+function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
+  const queryClient = useQueryClient();
+  const AGENT_LLM_KEY = ["settings", "agent-llm"] as const;
+
+  const { data, isError } = useQuery<{ agents: AgentLlmConfig[] }>({
+    queryKey: AGENT_LLM_KEY,
+    queryFn: async () => {
+      const res = await fetch("/api/settings/agent-llm");
+      if (!res.ok) throw new Error(`API ${res.status}`);
+      return (await res.json()) as { agents: AgentLlmConfig[] };
+    },
+    staleTime: 10_000,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (payload: {
+      agentId: string;
+      provider: string | null;
+    }) => {
+      const res = await fetch("/api/settings/agent-llm", {
+        body: JSON.stringify(payload),
+        headers: { "content-type": "application/json" },
+        method: "PUT",
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(`${res.status} ${detail}`);
+      }
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: AGENT_LLM_KEY }),
+  });
+
+  const agents = data?.agents ?? [];
+  if (agents.length === 0 && !isError) {
+    return null;
+  }
+
+  const PROVIDER_OPTIONS = [
+    `FLEET DEFAULT (${fleetProvider})`,
+    "OPENAI",
+    "ANTHROPIC",
+    "GOOGLE",
+    "XAI",
+    "DEEPSEEK",
+  ];
+
+  return (
+    <div className="border-t border-border pt-3 flex flex-col gap-2">
+      <span className="text-[10px] text-muted-foreground">
+        Override the fleet default for individual agents. When set, the named
+        agent runs on the chosen provider; all other agents follow the fleet
+        default above. Key resolved from stored keys first, then env.
+      </span>
+      {isError && (
+        <span className="text-[10px] text-terminal-red">
+          AGENT CONFIG UNREACHABLE
+        </span>
+      )}
+      {agents.map((agent) => {
+        const currentOption =
+          agent.providerOverride != null
+            ? agent.providerOverride
+            : `FLEET DEFAULT (${fleetProvider})`;
+        return (
+          <div key={agent.agentId} className="flex flex-col gap-0.5">
+            <span className="text-[9px] font-bold tracking-wider text-terminal-dim">
+              {agent.codename} — {agent.team}
+            </span>
+            <InlineSelect
+              label={agent.agentId}
+              value={currentOption}
+              options={PROVIDER_OPTIONS}
+              onChange={(v) => {
+                const isDefault = v.startsWith("FLEET DEFAULT");
+                updateMutation.mutate({
+                  agentId: agent.agentId,
+                  provider: isDefault ? null : v,
+                });
+              }}
+            />
+          </div>
+        );
+      })}
+      {updateMutation.isPending && (
+        <span className="text-[10px] font-bold text-terminal-cyan">
+          SAVING AGENT LLM CONFIG…
+        </span>
+      )}
+    </div>
+  );
+}
+
 function LlmCredentialsSection() {
   const { data, isError } = useQuery<LlmKeyStatus[]>({
     queryKey: ["llm", "credentials"],
@@ -1028,6 +1127,9 @@ export function SettingsView() {
                   SERVER UNREACHABLE — provider switching disabled
                 </span>
               )}
+              <AgentLlmConfigSection
+                fleetProvider={runtime.defaultLlmProvider}
+              />
               <LlmCredentialsSection />
               <SliderRow
                 label="CONSENSUS QUORUM"

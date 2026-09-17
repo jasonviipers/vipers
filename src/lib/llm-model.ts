@@ -44,7 +44,7 @@ let cachedProvider: { value: LlmProviderId; expiresAt: number } | null = null;
 const PROVIDER_TTL_MS = 10_000;
 
 /** The operator's DEFAULT LLM PROVIDER (short TTL cache). */
-export async function getActiveProvider(): Promise<LlmProviderId> {
+async function getActiveProvider(): Promise<LlmProviderId> {
   if (cachedProvider && cachedProvider.expiresAt > Date.now()) {
     return cachedProvider.value;
   }
@@ -89,7 +89,7 @@ const agentProviderCache = new Map<
  * the fleet default still applies. A missing or corrupt DB falls back to
  * the fleet default, so a config read failure never breaks an agent call.
  */
-export async function getProviderForAgent(
+async function getProviderForAgent(
   agentId: string,
 ): Promise<LlmProviderId | null> {
   const cached = agentProviderCache.get(agentId);
@@ -120,7 +120,7 @@ export async function getProviderForAgent(
  * Build a language-model instance for a specific provider using its
  * resolved key; null when no key is available for that provider.
  */
-export async function buildModelForProvider(provider: LlmProviderId) {
+async function buildModelForProvider(provider: LlmProviderId) {
   const apiKey = await getLlmApiKey(provider);
   if (!apiKey) {
     return null;
@@ -148,11 +148,6 @@ function createLanguageModel(provider: LlmProviderId, apiKey: string) {
  * fallback chain when keys are missing. Never returns null: the last
  * resort is the Google env key, matching pre-refactor behavior.
  */
-export async function resolveActiveModel() {
-  const { model } = await resolveActiveModelInfo();
-  return model;
-}
-
 export interface ActiveModelInfo {
   /** Non-null: resolveActiveModelInfo throws when no provider can resolve. */
   model: NonNullable<Awaited<ReturnType<typeof buildModelForProvider>>>;
@@ -163,7 +158,7 @@ export interface ActiveModelInfo {
 }
 
 /**
- * Same resolution chain as resolveActiveModel, but also reports WHICH
+ * Resolve a model through the provider fallback chain, reporting WHICH
  * provider the model actually runs on and the configured model id — the
  * metadata decision records need (a silent fallback must not be recorded
  * as the operator's chosen provider).

@@ -88,6 +88,24 @@ export const llmCredentials = pgTable("llm_credentials", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+/**
+ * Per-agent LLM provider override. NULL (absent row) → the agent inherits
+ * the fleet-wide DEFAULT LLM PROVIDER (runtime_settings.defaultLlmProvider);
+ * a row pins that one agent to a specific provider so the fleet can run
+ * heterogeneous models (e.g. PULSE_READER on GOOGLE, CHART_SCOUT on
+ * OPENAI). Written through GET/PUT /api/settings/agent-llm.
+ *
+ * Keyed by the agent id string from `agentConfigs` — deliberately no FK to
+ * `agents`: the fleet table may be empty on a fresh install while these
+ * overrides must still apply to the fixed agent identity.
+ */
+export const agentLlmConfigs = pgTable("agent_llm_configs", {
+  agentId: text("agent_id").primaryKey(),
+  /** "OPENAI" | "ANTHROPIC" | "GOOGLE" | "XAI" | "DEEPSEEK". */
+  provider: text("provider").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const positions = pgTable("positions", {
   accountId: text("account_id").notNull(), // scopes to the connected QuantEx user — see note below
   agentId: text("agent_id")
