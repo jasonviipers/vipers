@@ -42,7 +42,10 @@ function readLocalReads(): string[] {
 
 function writeLocalReads(ids: string[]) {
   try {
-    localStorage.setItem(LOCAL_READS_KEY, JSON.stringify(ids));
+    // Merge, don't replace: the storage holds the full accumulated read
+    // set, and callers pass only the newly-marked ids.
+    const merged = [...new Set([...readLocalReads(), ...ids])];
+    localStorage.setItem(LOCAL_READS_KEY, JSON.stringify(merged));
   } catch {
     // ignore write failures (quota exceeded, storage disabled, etc.)
   }

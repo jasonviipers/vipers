@@ -2,9 +2,8 @@ import { and, eq, lt, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { notificationReads } from "@/db/schema/notifications";
-import { classifyApiKey } from "@/lib/auth";
 import { useLogger, withEvlog } from "@/lib/evlog";
-import { extractApiKey, readerIdFromKey } from "@/lib/notification-reader";
+import { requestReaderId } from "@/lib/notification-reader";
 
 export const dynamic = "force-dynamic";
 
@@ -14,21 +13,20 @@ const MAX_ROWS_PER_READER = 500;
 /**
  * GET /api/notifications/read-state — the caller's read event ids.
  *
- * Identity is the caller's API key (x-api-key / Bearer), hashed — the key
- * itself is never stored. Unauthenticated callers get an empty state so
- * the bell degrades to local-only reads instead of failing.
+ * Identity is the caller's session (signed cookie) or a hash of their API
+ * key — the raw key/cookie is never stored. Unauthenticated callers get an
+ * empty state so the bell degrades to local-only reads instead of failing.
  */
 export const GET = withEvlog(async (request: Request) => {
   const logger = useLogger();
   logger.set({ integration: "notifications" });
 
-  const key = extractApiKey(request);
-  if (!key || classifyApiKey(key) === "invalid") {
+  const readerId = requestReaderId(request);
+  if (!readerId) {
     logger.set({ auth: { identified: false } });
     return Response.json({ eventIds: [], synced: false });
   }
 
-  const readerId = readerIdFromKey(key);
   const rows = await db
     .select({ eventId: notificationReads.eventId })
     .from(notificationReads)
@@ -56,8 +54,8 @@ export const PUT = withEvlog(async (request: Request) => {
   const logger = useLogger();
   logger.set({ integration: "notifications" });
 
-  const key = extractApiKey(request);
-  if (!key || classifyApiKey(key) === "invalid") {
+  const readerId = requestReaderId(request);
+  if (!readerId) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -77,8 +75,6 @@ export const PUT = withEvlog(async (request: Request) => {
   if (eventIds.length === 0) {
     return Response.json({ error: "eventIds required" }, { status: 400 });
   }
-
-  const readerId = readerIdFromKey(key);
 
   await db
     .insert(notificationReads)

@@ -20,7 +20,7 @@ import {
   type BrokerStatus,
   useBroker,
 } from "@/context/broker-context";
-import { getStoredApiKey, isDemoSession } from "@/lib/api-key";
+import { isDemoSession } from "@/lib/api-key";
 
 function BrokerStatusBadge({ status }: { status: BrokerStatus }) {
   const styles: Record<BrokerStatus, string> = {
@@ -113,12 +113,10 @@ function OkxCredentialForm({ onSaved }: { onSaved: () => void }) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const key = getStoredApiKey();
       const res = await fetch("/api/broker/credentials", {
         body: JSON.stringify({ apiKey, mode, passphrase, region, secret }),
         headers: {
           "content-type": "application/json",
-          ...(key ? { "x-api-key": key } : {}),
         },
         method: "PUT",
       });
@@ -261,11 +259,7 @@ function DeleteCredentialsButton({ onDeleted }: { onDeleted: () => void }) {
   const [confirming, setConfirming] = useState(false);
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const key = getStoredApiKey();
       const res = await fetch("/api/broker/credentials", {
-        headers: {
-          ...(key ? { "x-api-key": key } : {}),
-        },
         method: "DELETE",
       });
       if (!res.ok) {
@@ -379,11 +373,7 @@ function BalanceSyncRow() {
 
   const syncMutation = useMutation({
     mutationFn: async () => {
-      const key = getStoredApiKey();
       const res = await fetch("/api/broker/balance", {
-        headers: {
-          ...(key ? { "x-api-key": key } : {}),
-        },
         method: "POST",
       });
       const payload = (await res.json().catch(() => null)) as
@@ -505,12 +495,10 @@ function ModeSwitchButton({ current }: { current: "live" | "paper" }) {
 
   const switchMutation = useMutation({
     mutationFn: async (mode: "demo" | "live") => {
-      const key = getStoredApiKey();
       const res = await fetch("/api/broker/credentials", {
         body: JSON.stringify({ mode }),
         headers: {
           "content-type": "application/json",
-          ...(key ? { "x-api-key": key } : {}),
         },
         method: "PATCH",
       });

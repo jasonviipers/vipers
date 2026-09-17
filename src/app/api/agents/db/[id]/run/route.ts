@@ -9,7 +9,7 @@ import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { fetchMarketSignals } from "@/ai/tools/market-signals-tool";
 import { fetchTechnicals } from "@/ai/tools/technical-analysis-tool";
 import { useLogger, withEvlog } from "@/lib/evlog";
-import { requireWriteAccess } from "@/lib/route-auth";
+import { requirePermission } from "@/lib/session-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -56,17 +56,32 @@ export const POST = withEvlog(
     const logger = useLogger();
     logger.set({ integration: "agents" });
 
-    // Spends an LLM call — write-access only (demo key is read-only).
-    const auth = requireWriteAccess(request);
+    // Spends an LLM call — write-capable identity only (demo is read-only).
+    const auth = requirePermission(request, "run:agent");
     if (!auth.ok) {
       return auth.response;
     }
+    logger.set({
+      caller: { subject: auth.identity.subject, kind: auth.identity.kind },
+    });
 
     const { id } = await ctx.params;
     if (id !== reasoningAnalysisAgentConfigId) {
       return Response.json(
         { error: "only the reasoning-analysis-agent can run analysis" },
         { status: 404 },
+      );
+    }
+
+    // A self-service agent API key may only trigger its own agent run — an
+    // operator session may trigger any runnable agent.
+    if (
+      auth.identity.kind === "agent" &&
+      auth.identity.agentId !== reasoningAnalysisAgentConfigId
+    ) {
+      return Response.json(
+        { error: "an agent key may only run its own agent" },
+        { status: 403 },
       );
     }
 

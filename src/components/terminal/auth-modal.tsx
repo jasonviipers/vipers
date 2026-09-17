@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/input-group";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { API_KEY_PREFIX, DEMO_API_KEY, storeApiKey } from "@/lib/api-key";
+import { API_KEY_PREFIX, DEMO_API_KEY, saveClientSession } from "@/lib/api-key";
 import { APP_NAME } from "@/lib/constant";
 
 const API_KEY_FORMAT = new RegExp(`^${API_KEY_PREFIX}[A-Za-z0-9_]{16,}$`);
@@ -61,6 +61,7 @@ export function AuthModal({
         body: JSON.stringify({ key: trimmed }),
       });
       const payload = (await res.json().catch(() => null)) as {
+        demo?: boolean;
         ok?: boolean;
       } | null;
       if (!res.ok || !payload?.ok) {
@@ -68,8 +69,10 @@ export function AuthModal({
         setIsAuthenticating(false);
         return;
       }
-      storeApiKey(trimmed);
-      onAuthenticate(trimmed, false);
+      // The server set an HttpOnly signed cookie; the client only records the
+      // demo flag (never the raw key).
+      saveClientSession({ demo: payload.demo === true });
+      onAuthenticate(trimmed, payload.demo === true);
     } catch {
       setError("CONNECTION ERROR — RETRY");
       setIsAuthenticating(false);
@@ -96,7 +99,7 @@ export function AuthModal({
         setIsDemoLoading(false);
         return;
       }
-      storeApiKey(DEMO_API_KEY);
+      saveClientSession({ demo: true });
       onAuthenticate(DEMO_API_KEY, payload.demo === true);
     } catch {
       setError("CONNECTION ERROR — RETRY");

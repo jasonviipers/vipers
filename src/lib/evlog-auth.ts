@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-
-import { classifyApiKey } from "@/lib/auth";
 import { useLogger } from "@/lib/evlog";
+import { classifyApiKey } from "@/lib/identity";
+import { sessionFromRequest } from "@/lib/session-auth";
 
 function extractApiKey(request: Request): string | null {
   const header = request.headers.get("x-api-key");
@@ -29,17 +29,36 @@ function apiKeySubject(key: string): string {
 }
 
 /**
- * Attach the authenticated user to the current wide event from the API key
- * carried on the request (`x-api-key` or `Authorization: Bearer`).
+ * Attach the authenticated identity to the current wide event.
  *
- * Never logs the raw key — stable per-key `userId` is derived from a hash.
- * Returns `true` when a valid or demo key was identified, `false` otherwise.
+ * Prefers the signed session cookie (the browser path); falls back to the
+ * API key carried on the request (`x-api-key` / `Authorization: Bearer`).
+ * Never logs the raw key — the cookie subject or a stable per-key hash is
+ * used. Returns `true` when an identity was identified, `false` otherwise.
  */
 export async function identifyEvlogUser(request: Request): Promise<boolean> {
   // biome-ignore lint/correctness/useHookAtTopLevel: evlog's useLogger is a request logger, not a React hook.
   const logger = useLogger();
-  const key = extractApiKey(request);
 
+  const session = sessionFromRequest(request);
+  if (session) {
+    logger.set({
+      userId: session.subject,
+      user: {
+        id: session.subject,
+        kind: session.kind,
+        demo: session.demo,
+      },
+      auth: {
+        method: "session",
+        identified: true,
+        kind: session.kind,
+      },
+    });
+    return true;
+  }
+
+  const key = extractApiKey(request);
   if (!key) {
     logger.set({
       auth: { method: "api_key", identified: false, reason: "missing" },

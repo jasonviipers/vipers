@@ -2,7 +2,6 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { getStoredApiKey } from "@/lib/api-key";
 import {
   type StrategyDto,
   type StrategyInput,
@@ -11,13 +10,12 @@ import {
 } from "@/lib/queries/strategies";
 
 /**
- * Strategy mutations require a write-capable API key (the demo key is
- * read-only server-side), so every request carries the stored key. The
- * query layer stays public-read; only mutations authenticate.
+ * Strategy mutations are write-capable, so they require a valid session on
+ * the server (403 for read-only demo / read-only agents). Auth is carried by
+ * the HttpOnly session cookie; the client never sends a raw key header.
  */
 function authHeaders(): Record<string, string> {
-  const key = getStoredApiKey();
-  return key ? { "x-api-key": key } : {};
+  return {};
 }
 
 type ListCaches = { key: readonly unknown[]; data: StrategiesListSnapshot }[];

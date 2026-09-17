@@ -20,6 +20,13 @@ export const env = createEnv({
     // Encrypts broker/LLM credentials stored in the DB (written via the
     // /settings UI). Required in production; dev derives a fallback key.
     SECRET_BOX_KEY: z.string().optional(),
+    // Signs short-lived session cookies (viipers_session). HMAC-SHA256.
+    // Required in production; dev derives a fallback key from the DB URL.
+    SESSION_SECRET: z.string().optional(),
+    // Optional per-agent API keys, JSON: {"<agent-id>": "vps_...", ...}.
+    // Gives each fleet member its own credential for headless HTTP access;
+    // identity is still per-agent regardless (see src/lib/identity.ts).
+    AGENT_API_KEYS: z.string().optional(),
     API_KEY_PATTERN: z.string().min(1),
     API_KEY_VALID: z.string().min(1),
     DEMO_API_KEY: z.string().min(1),
@@ -60,6 +67,8 @@ export const env = createEnv({
     XAI_API_KEY: process.env.XAI_API_KEY,
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
     SECRET_BOX_KEY: process.env.SECRET_BOX_KEY,
+    SESSION_SECRET: process.env.SESSION_SECRET,
+    AGENT_API_KEYS: process.env.AGENT_API_KEYS,
     STOCKTWITS_API_KEY: process.env.STOCKTWITS_API_KEY,
     TWITTER_BEARER_TOKEN: process.env.TWITTER_BEARER_TOKEN,
     REDIS_URL: process.env.REDIS_URL,

@@ -21,7 +21,7 @@ import {
   type ColorSchemeId,
   useColorScheme,
 } from "@/context/color-scheme-context";
-import { getStoredApiKey, isDemoSession } from "@/lib/api-key";
+import { isDemoSession } from "@/lib/api-key";
 import {
   DEFAULT_TERMINAL_SETTINGS,
   loadTerminalSettings,
@@ -376,12 +376,10 @@ function LlmKeyRow({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const key = getStoredApiKey();
       const res = await fetch("/api/llm/credentials", {
         body: JSON.stringify({ apiKey: keyValue, provider }),
         headers: {
           "content-type": "application/json",
-          ...(key ? { "x-api-key": key } : {}),
         },
         method: "PUT",
       });
@@ -407,11 +405,7 @@ function LlmKeyRow({
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const key = getStoredApiKey();
       const res = await fetch(`/api/llm/credentials?provider=${provider}`, {
-        headers: {
-          ...(key ? { "x-api-key": key } : {}),
-        },
         method: "DELETE",
       });
       if (!res.ok) {
@@ -603,12 +597,10 @@ export function SettingsView() {
 
   const runtimeMutation = useMutation({
     mutationFn: async (patch: Partial<RuntimeSettings>) => {
-      const key = getStoredApiKey();
       const res = await fetch("/api/settings/runtime", {
         body: JSON.stringify(patch),
         headers: {
           "content-type": "application/json",
-          ...(key ? { "x-api-key": key } : {}),
         },
         method: "PUT",
       });
@@ -673,12 +665,10 @@ export function SettingsView() {
   });
   const killSwitchMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
-      const key = getStoredApiKey();
       const res = await fetch("/api/risk/kill-switch", {
         body: JSON.stringify({ enabled }),
         headers: {
           "content-type": "application/json",
-          ...(key ? { "x-api-key": key } : {}),
         },
         method: "POST",
       });

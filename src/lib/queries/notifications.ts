@@ -6,7 +6,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { getStoredApiKey } from "@/lib/api-key";
+import { getClientSession } from "@/lib/api-key";
 
 /**
  * Server-synced notification read state.
@@ -14,10 +14,11 @@ import { getStoredApiKey } from "@/lib/api-key";
  * GET  /api/notifications/read-state → { eventIds, synced }
  * PUT  /api/notifications/read-state → marks event ids read (idempotent)
  *
- * `synced: false` means the caller has no API key (or an invalid one); the
- * bell then falls back to localStorage-only reads. All mark-read operations
- * are optimistic: the UI updates immediately, rolls back on error, and
- * reconciles with the server on settle (see the optimistic-updates skill).
+ * Auth rides the HttpOnly session cookie; `synced: false` means the caller
+ * has no session and the bell falls back to localStorage-only reads. All
+ * mark-read operations are optimistic: the UI updates immediately, rolls
+ * back on error, and reconciles with the server on settle (see the
+ * optimistic-updates skill).
  */
 
 export interface ReadStateResponse {
@@ -41,12 +42,11 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
 }
 
 /**
- * Terminal auth sends the API key via header, mirroring evlog-auth's
- * `x-api-key` / Bearer convention.
+ * Session auth is carried by the HttpOnly cookie; the client never sends a
+ * raw key (and never stores one).
  */
 function authHeaders(): Record<string, string> {
-  const key = getStoredApiKey();
-  return key ? { "x-api-key": key } : {};
+  return {};
 }
 
 export const notificationQueries = {
@@ -54,8 +54,7 @@ export const notificationQueries = {
     queryOptions({
       queryKey: notificationKeys.readState(),
       queryFn: async ({ signal }) => {
-        const key = getStoredApiKey();
-        if (!key) {
+        if (!getClientSession()) {
           // Not signed in — skip the request entirely; local-only mode.
           return { eventIds: [], synced: false } satisfies ReadStateResponse;
         }
@@ -74,33 +73,40 @@ interface ReadStateSnapshot {
   data: ReadStateResponse;
 }
 
-function snapshotReadState(
-  queryClient: ReturnType<typeof useQueryClient>,
-): ReadStateSnapshot[] {
+function isReadState(data: unknown): data is ReadStateResponse {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    Array.isArray((data as ReadStateResponse).eventIds) &&
+    typeof (data as ReadStateResponse).synced === "boolean"
+  );
+}
+
+function readStateEntries(queryClient: ReturnType<typeof useQueryClient>) {
   const queries = queryClient
     .getQueryCache()
     .findAll({ queryKey: notificationKeys.all, exact: false });
-  const snapshots: ReadStateSnapshot[] = [];
-  for (const query of queries) {
-    const data = queryClient.getQueryData<ReadStateResponse>(query.queryKey);
-    if (data) {
-      snapshots.push({ data, key: query.queryKey });
-    }
-  }
-  return snapshots;
+  // The prefix also matches unrelated entries under ["notifications"]
+  // (e.g. the local-reads string[] cache), so shape-check each one —
+  // mapping over a non-ReadState entry would throw and abort the mutation.
+  return queries.flatMap((query) => {
+    const data = queryClient.getQueryData(query.queryKey);
+    return isReadState(data) ? [{ data, key: query.queryKey }] : [];
+  });
+}
+
+function snapshotReadState(
+  queryClient: ReturnType<typeof useQueryClient>,
+): ReadStateSnapshot[] {
+  return readStateEntries(queryClient);
 }
 
 function patchReadState(
   queryClient: ReturnType<typeof useQueryClient>,
   map: (ids: string[]) => string[],
 ) {
-  const queries = queryClient
-    .getQueryCache()
-    .findAll({ queryKey: notificationKeys.all, exact: false });
-  for (const query of queries) {
-    const data = queryClient.getQueryData<ReadStateResponse>(query.queryKey);
-    if (!data) continue;
-    queryClient.setQueryData<ReadStateResponse>(query.queryKey, {
+  for (const { data, key } of readStateEntries(queryClient)) {
+    queryClient.setQueryData<ReadStateResponse>(key, {
       ...data,
       eventIds: map(data.eventIds),
     });
@@ -108,15 +114,15 @@ function patchReadState(
 }
 
 /**
- * True when the client has a terminal API key, i.e. mutations can actually
- * sync. Gates the optimistic path so unauthenticated sessions don't spin
- * on doomed requests. Set after mount (SSR-safe: sessionStorage is only
+ * True when the client has an active session marker, i.e. mutations can
+ * actually sync. Gates the optimistic path so unauthenticated sessions don't
+ * spin on doomed requests. Set after mount (SSR-safe: sessionStorage is only
  * touched client-side).
  */
 export function useHasSyncableAuth(): boolean | null {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   useEffect(() => {
-    setHasKey(getStoredApiKey() !== null);
+    setHasKey(getClientSession() !== null);
   }, []);
   return hasKey;
 }
