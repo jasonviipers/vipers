@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": ["src/index.{ts,tsx,js,jsx}", "src/main.{ts,tsx,js,jsx}"],
+  "ignoreDependencies": ["babel-plugin-react-compiler", "@swc/helpers"],
+  "ignoreExports": [
+    {
+      "file": "src/ai/broker/okx-broker.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/channels/broker/adapter.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/ai/tools/stocktwits-api.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/ai/tools/stocktwits-tool.ts",
+      "exports": ["*"]
+    }
+  ],
+  "duplicates": {
+    "minOccurrences": 3,
+    "ignore": ["**/tests/**"]
+  },
+  "rules": {}
+}

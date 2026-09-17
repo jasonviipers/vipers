@@ -38,8 +38,8 @@ import { safeCommand } from "@/lib/redis";
 
 export const SESSION_COOKIE = "viipers_session";
 
-export const SESSION_IDLE_TTL_MS = 15 * 60 * 1000; // 15 min idle
-export const SESSION_MAX_TTL_MS = 24 * 60 * 60 * 1000; // 24h absolute
+const SESSION_IDLE_TTL_MS = 15 * 60 * 1000; // 15 min idle
+const SESSION_MAX_TTL_MS = 24 * 60 * 60 * 1000; // 24h absolute
 
 const VERSION = "v1";
 const REVOKE_PREFIX = "session:revoke:";
@@ -228,7 +228,7 @@ export interface CookieAttributes {
 }
 
 /** Serialize a cookie value + attributes into a Set-Cookie header string. */
-export function serializeCookie(
+function serializeCookie(
   name: string,
   value: string,
   attrs: CookieAttributes,

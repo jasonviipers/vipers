@@ -1,8 +1,7 @@
 import { evlogMiddleware } from "evlog/next";
 import { type NextRequest, NextResponse } from "next/server";
-
+import { extractApiKey } from "@/lib/api-key";
 import { resolveApiKey } from "@/lib/identity";
-import { extractApiKey } from "@/lib/notification-reader";
 import {
   clearSessionCookie,
   encodeSession,

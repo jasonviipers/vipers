@@ -32,7 +32,7 @@ export interface AgentConfig {
 export type AgentHealth = "HEALTHY" | "DEGRADED" | "OFFLINE";
 
 /** Display label for the dynamically-resolved fleet model. */
-export const FLEET_MODEL_LABEL = "operator/default-llm";
+const FLEET_MODEL_LABEL = "operator/default-llm";
 
 export interface AgentRuntimeStatus {
   health: AgentHealth;
@@ -58,7 +58,7 @@ export function createEmptyRuntimeStatus(id: string): AgentRuntimeStatus {
   };
 }
 
-export const sentimentAgentConfig: AgentConfig = {
+const sentimentAgentConfig: AgentConfig = {
   id: "sentiment-agent",
   codename: "PULSE_READER",
   maxConcurrency: 2,
@@ -78,7 +78,7 @@ export const sentimentAgentConfig: AgentConfig = {
   ],
 };
 
-export const technicalAnalysisAgentConfig: AgentConfig = {
+const technicalAnalysisAgentConfig: AgentConfig = {
   id: "technical-analysis-agent",
   codename: "CHART_SCOUT",
   maxConcurrency: 2,
@@ -130,7 +130,7 @@ export const riskAgentConfig: AgentConfig = {
   tools: ["evaluateRisk", "fetchMarketQuote"],
 };
 
-export const executionAgentConfig: AgentConfig = {
+const executionAgentConfig: AgentConfig = {
   id: "order-executor-agent",
   codename: "STRIKE_VIPER",
   maxConcurrency: 1,
@@ -144,7 +144,7 @@ export const executionAgentConfig: AgentConfig = {
   tools: ["submitOrder"],
 };
 
-export const coordinatorAgentConfig: AgentConfig = {
+const coordinatorAgentConfig: AgentConfig = {
   id: "orchestrator-agent",
   codename: "ALPHA_SENTINEL",
   maxConcurrency: 1,

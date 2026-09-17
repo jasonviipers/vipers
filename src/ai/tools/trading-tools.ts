@@ -2,24 +2,9 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import { fetchMarketQuote } from "./market-quote-tool";
-import {
-  fetchMarketSignals,
-  fetchNewsSignals,
-  fetchRedditSignals,
-} from "./market-signals-tool";
-import { evaluateProposalRiskServer } from "./risk-tool";
-import {
-  fetchStockTwitsSentiment,
-  fetchStockTwitsTrending,
-} from "./stocktwits-tool";
-import { fetchTechnicals } from "./technical-analysis-tool";
+import { fetchNewsSignals, fetchRedditSignals } from "./market-signals-tool";
+import { fetchStockTwitsSentiment } from "./stocktwits-tool";
 import { fetchTwitterSentiment } from "./twitter-tool";
-
-export const gatherMarketSignalsTool = tool({
-  description: "Gather market sentiment signals for an asset.",
-  inputSchema: z.object({ asset: z.string() }),
-  execute: ({ asset }) => fetchMarketSignals(asset),
-});
 
 export const scrapeRedditTool = tool({
   description:
@@ -46,35 +31,6 @@ export const gatherStockTwitsSentimentTool = tool({
   description: "Read StockTwits crowd sentiment for an asset.",
   inputSchema: z.object({ asset: z.string() }),
   execute: ({ asset }) => fetchStockTwitsSentiment(asset),
-});
-
-export const gatherStockTwitsTrendingSymbolsTool = tool({
-  description: "List currently trending StockTwits symbols.",
-  inputSchema: z.object({}),
-  execute: () => fetchStockTwitsTrending(),
-});
-
-export const analyzeStockTwitsSentimentTool = gatherStockTwitsSentimentTool;
-export const analyzeStockTwitsTrendingTool =
-  gatherStockTwitsTrendingSymbolsTool;
-
-export const analyzeTechnicalsTool = tool({
-  description: "Fetch technical indicators and regime for an asset.",
-  inputSchema: z.object({ asset: z.string() }),
-  execute: ({ asset }) => fetchTechnicals(asset),
-});
-
-export const evaluateRiskTool = tool({
-  description: "Evaluate a proposal against the server-owned risk gate.",
-  inputSchema: z.object({
-    asset: z.string(),
-    confidence: z.number().min(0).max(1),
-  }),
-  execute: ({ asset, confidence }) =>
-    evaluateProposalRiskServer(
-      { asset, confidence },
-      { maxDailyLossPct: 3, maxPositionPct: 5 },
-    ),
 });
 
 export const fetchMarketQuoteTool = tool({

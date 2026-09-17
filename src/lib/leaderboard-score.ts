@@ -14,7 +14,7 @@
  */
 
 /** Minimum closed trades before an agent's score is unscaled. */
-export const MIN_TRADES = 10;
+const MIN_TRADES = 10;
 
 export interface ScoreInput {
   maxDrawdown: number;
@@ -25,12 +25,12 @@ export interface ScoreInput {
 }
 
 /** Activity multiplier in (0, 1]; 1 once the agent has MIN_TRADES trades. */
-export function activityFactor(trades: number): number {
+function activityFactor(trades: number): number {
   return Math.min(Math.max(trades, 0) / MIN_TRADES, 1);
 }
 
 /** Raw composite (0-100) from the performance sub-scores. */
-export function compositeScore(stats: ScoreInput): number {
+function compositeScore(stats: ScoreInput): number {
   const roiScore = Math.min(Math.max(stats.roi, 0) / 50, 1) * 100;
   const sharpeScore = Math.min(Math.max(stats.sharpe, 0) / 3, 1) * 100;
   const wrScore = Math.min(Math.max(stats.winRate, 0), 100);

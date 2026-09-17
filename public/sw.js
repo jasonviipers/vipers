@@ -1,3 +1,6 @@
+// Wired into the app via pwa.config.ts (Next rewrites "/sw.js") and used by
+// installed PWA clients to serve offline.html — not resolvable by static import.
+// fallow-ignore-file unused-file
 // Bump this version when changing offline.html so installed apps refresh it.
 const CACHE_NAME = "bts-pwa-offline-v1";
 const OFFLINE_URL = "/offline.html";

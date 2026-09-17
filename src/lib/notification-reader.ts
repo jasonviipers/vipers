@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { extractApiKey } from "@/lib/api-key";
 import { sessionFromRequest } from "@/lib/session-auth";
 
 /**
@@ -11,27 +12,7 @@ import { sessionFromRequest } from "@/lib/session-auth";
  * (or cookie token) is never stored.
  */
 
-export function extractApiKey(request: Request): string | null {
-  const header = request.headers.get("x-api-key");
-  if (header?.trim()) {
-    return header.trim();
-  }
-
-  const authorization = request.headers.get("authorization");
-  if (!authorization) {
-    return null;
-  }
-
-  const [scheme, credentials, ...rest] = authorization.trim().split(" ");
-  if (scheme?.toLowerCase() !== "bearer") {
-    return null;
-  }
-
-  const key = [credentials, ...rest].filter(Boolean).join(" ");
-  return key.length > 0 ? key : null;
-}
-
-export function readerIdFromKey(key: string): string {
+function readerIdFromKey(key: string): string {
   const digest = createHash("sha256").update(key).digest("hex");
   return `reader:${digest.slice(0, 24)}`;
 }

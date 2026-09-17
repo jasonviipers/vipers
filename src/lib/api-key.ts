@@ -5,6 +5,31 @@ export const API_KEY_PREFIX = env.NEXT_PUBLIC_API_KEY_PREFIX;
 export const DEMO_API_KEY = "vps_demo_readonly_9f2k1m0q7x4w";
 
 /**
+ * Extract an API key from a request's `x-api-key` header or
+ * `Authorization: Bearer` header. Returns the trimmed key, or null when
+ * neither header carries one.
+ */
+export function extractApiKey(request: Request): string | null {
+  const header = request.headers.get("x-api-key");
+  if (header?.trim()) {
+    return header.trim();
+  }
+
+  const authorization = request.headers.get("authorization");
+  if (!authorization) {
+    return null;
+  }
+
+  const [scheme, credentials, ...rest] = authorization.trim().split(" ");
+  if (scheme?.toLowerCase() !== "bearer") {
+    return null;
+  }
+
+  const key = [credentials, ...rest].filter(Boolean).join(" ");
+  return key.length > 0 ? key : null;
+}
+
+/**
  * Client-side session marker.
  *
  * The real credential NEVER lives in the browser. After `/api/auth/validate`

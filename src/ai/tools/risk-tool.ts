@@ -71,7 +71,7 @@ function startOfLocalDay(): Date {
  * The /settings toggle writes this via POST /api/risk/kill-switch; the
  * gate reads it before evaluating anything.
  */
-export async function isKillSwitchEnabled(): Promise<boolean> {
+async function isKillSwitchEnabled(): Promise<boolean> {
   const [row] = await db
     .select({ enabled: riskControls.killSwitchEnabled })
     .from(riskControls)
@@ -84,7 +84,7 @@ export async function isKillSwitchEnabled(): Promise<boolean> {
  * and debits minus fees. Matches the ledger convention used by the
  * portfolio snapshot job (fee rows carry positive amounts and are spent).
  */
-export async function fetchDailyRealizedPnl(): Promise<number> {
+async function fetchDailyRealizedPnl(): Promise<number> {
   const rows = await db
     .select({
       total: sql<string>`coalesce(sum(
@@ -114,7 +114,7 @@ export async function fetchDailyRealizedPnl(): Promise<number> {
  * Currently OPEN position count — feeds the operator's max-open-positions
  * cap (runtime settings) in the risk gate.
  */
-export async function fetchOpenPositionsCount(): Promise<number> {
+async function fetchOpenPositionsCount(): Promise<number> {
   const rows = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(positions)
@@ -122,7 +122,7 @@ export async function fetchOpenPositionsCount(): Promise<number> {
   return rows[0]?.count ?? 0;
 }
 
-export async function fetchTotalCapital(): Promise<number> {
+async function fetchTotalCapital(): Promise<number> {
   // Once the independent ledger has a posted cash movement, it becomes the
   // preferred capital source. The legacy projection remains the fallback
   // during migration and for fresh installs with no ledger entries.

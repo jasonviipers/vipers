@@ -82,12 +82,8 @@
           "name": "agent_stats_agent_id_agents_id_fk",
           "tableFrom": "agent_stats",
           "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["agent_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -216,12 +212,8 @@
           "name": "equity_snapshots_agent_id_agents_id_fk",
           "tableFrom": "equity_snapshots",
           "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["agent_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -316,9 +308,7 @@
         "decision_ledger_content_hash_unique": {
           "name": "decision_ledger_content_hash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "content_hash"
-          ]
+          "columns": ["content_hash"]
         }
       },
       "policies": {},
@@ -422,9 +412,7 @@
         "decision_snapshots_proposal_id_unique": {
           "name": "decision_snapshots_proposal_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "proposal_id"
-          ]
+          "columns": ["proposal_id"]
         }
       },
       "policies": {},
@@ -564,12 +552,8 @@
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
           "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -656,12 +640,8 @@
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
           "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -671,9 +651,7 @@
         "session_token_unique": {
           "name": "session_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -744,9 +722,7 @@
         "user_email_unique": {
           "name": "user_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},
@@ -890,12 +866,8 @@
           "name": "consensus_proposals_proposed_by_agent_id_agents_id_fk",
           "tableFrom": "consensus_proposals",
           "tableTo": "agents",
-          "columnsFrom": [
-            "proposed_by_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["proposed_by_agent_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -903,12 +875,8 @@
           "name": "consensus_proposals_strategy_id_strategies_id_fk",
           "tableFrom": "consensus_proposals",
           "tableTo": "strategies",
-          "columnsFrom": [
-            "strategy_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["strategy_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -975,12 +943,8 @@
           "name": "consensus_votes_agent_id_agents_id_fk",
           "tableFrom": "consensus_votes",
           "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["agent_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -988,12 +952,8 @@
           "name": "consensus_votes_proposal_id_consensus_proposals_id_fk",
           "tableFrom": "consensus_votes",
           "tableTo": "consensus_proposals",
-          "columnsFrom": [
-            "proposal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["proposal_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1003,10 +963,7 @@
         "consensus_votes_proposal_id_agent_id_unique": {
           "name": "consensus_votes_proposal_id_agent_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "proposal_id",
-            "agent_id"
-          ]
+          "columns": ["proposal_id", "agent_id"]
         }
       },
       "policies": {},
@@ -1158,12 +1115,8 @@
           "name": "capital_transactions_related_position_id_positions_id_fk",
           "tableFrom": "capital_transactions",
           "tableTo": "positions",
-          "columnsFrom": [
-            "related_position_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["related_position_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1393,9 +1346,7 @@
         "ledger_audit_chain_current_hash_unique": {
           "name": "ledger_audit_chain_current_hash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "current_hash"
-          ]
+          "columns": ["current_hash"]
         }
       },
       "policies": {},
@@ -1467,12 +1418,8 @@
           "name": "ledger_entries_account_id_ledger_accounts_id_fk",
           "tableFrom": "ledger_entries",
           "tableTo": "ledger_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1480,12 +1427,8 @@
           "name": "ledger_entries_transaction_id_ledger_transactions_id_fk",
           "tableFrom": "ledger_entries",
           "tableTo": "ledger_transactions",
-          "columnsFrom": [
-            "transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1560,9 +1503,7 @@
         "ledger_marks_content_hash_unique": {
           "name": "ledger_marks_content_hash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "content_hash"
-          ]
+          "columns": ["content_hash"]
         }
       },
       "policies": {},
@@ -1647,9 +1588,7 @@
         "ledger_order_events_idempotency_key_unique": {
           "name": "ledger_order_events_idempotency_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "idempotency_key"
-          ]
+          "columns": ["idempotency_key"]
         }
       },
       "policies": {},
@@ -1887,9 +1826,7 @@
         "ledger_transactions_idempotency_key_unique": {
           "name": "ledger_transactions_idempotency_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "idempotency_key"
-          ]
+          "columns": ["idempotency_key"]
         }
       },
       "policies": {},
@@ -2197,12 +2134,8 @@
           "name": "strategy_assets_strategy_id_strategies_id_fk",
           "tableFrom": "strategy_assets",
           "tableTo": "strategies",
-          "columnsFrom": [
-            "strategy_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["strategy_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2210,10 +2143,7 @@
       "compositePrimaryKeys": {
         "strategy_assets_strategy_id_asset_pk": {
           "name": "strategy_assets_strategy_id_asset_pk",
-          "columns": [
-            "strategy_id",
-            "asset"
-          ]
+          "columns": ["strategy_id", "asset"]
         }
       },
       "uniqueConstraints": {},
@@ -2401,12 +2331,8 @@
           "name": "strategy_promotions_plugin_id_strategy_plugins_plugin_id_fk",
           "tableFrom": "strategy_promotions",
           "tableTo": "strategy_plugins",
-          "columnsFrom": [
-            "plugin_id"
-          ],
-          "columnsTo": [
-            "plugin_id"
-          ],
+          "columnsFrom": ["plugin_id"],
+          "columnsTo": ["plugin_id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2441,12 +2367,8 @@
           "name": "strategy_signal_sources_strategy_id_strategies_id_fk",
           "tableFrom": "strategy_signal_sources",
           "tableTo": "strategies",
-          "columnsFrom": [
-            "strategy_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["strategy_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2454,10 +2376,7 @@
       "compositePrimaryKeys": {
         "strategy_signal_sources_strategy_id_source_pk": {
           "name": "strategy_signal_sources_strategy_id_source_pk",
-          "columns": [
-            "strategy_id",
-            "source"
-          ]
+          "columns": ["strategy_id", "source"]
         }
       },
       "uniqueConstraints": {},
@@ -2748,12 +2667,8 @@
           "name": "orders_agent_id_agents_id_fk",
           "tableFrom": "orders",
           "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["agent_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2763,9 +2678,7 @@
         "orders_proposal_id_unique": {
           "name": "orders_proposal_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "proposal_id"
-          ]
+          "columns": ["proposal_id"]
         }
       },
       "policies": {},
@@ -2874,12 +2787,8 @@
           "name": "positions_agent_id_agents_id_fk",
           "tableFrom": "positions",
           "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["agent_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2887,12 +2796,8 @@
           "name": "positions_signal_id_signals_id_fk",
           "tableFrom": "positions",
           "tableTo": "signals",
-          "columnsFrom": [
-            "signal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["signal_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2900,12 +2805,8 @@
           "name": "positions_strategy_id_strategies_id_fk",
           "tableFrom": "positions",
           "tableTo": "strategies",
-          "columnsFrom": [
-            "strategy_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["strategy_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3052,10 +2953,7 @@
         "notification_reads_reader_id_event_id_unique": {
           "name": "notification_reads_reader_id_event_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "reader_id",
-            "event_id"
-          ]
+          "columns": ["reader_id", "event_id"]
         }
       },
       "policies": {},
@@ -3067,107 +2965,57 @@
     "public.agent_status": {
       "name": "agent_status",
       "schema": "public",
-      "values": [
-        "online",
-        "offline",
-        "error",
-        "busy"
-      ]
+      "values": ["online", "offline", "error", "busy"]
     },
     "public.team": {
       "name": "team",
       "schema": "public",
-      "values": [
-        "SENTIMENT",
-        "ANALYSIS",
-        "EXECUTION",
-        "RISK",
-        "COORDINATION"
-      ]
+      "values": ["SENTIMENT", "ANALYSIS", "EXECUTION", "RISK", "COORDINATION"]
     },
     "public.proposal_status": {
       "name": "proposal_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "approved",
-        "rejected"
-      ]
+      "values": ["pending", "approved", "rejected"]
     },
     "public.vote": {
       "name": "vote",
       "schema": "public",
-      "values": [
-        "for",
-        "against",
-        "abstain"
-      ]
+      "values": ["for", "against", "abstain"]
     },
     "public.capital_txn_type": {
       "name": "capital_txn_type",
       "schema": "public",
-      "values": [
-        "deposit",
-        "withdrawal",
-        "realized_pnl",
-        "fee"
-      ]
+      "values": ["deposit", "withdrawal", "realized_pnl", "fee"]
     },
     "public.event_type": {
       "name": "event_type",
       "schema": "public",
-      "values": [
-        "trade",
-        "signal",
-        "alert",
-        "heartbeat"
-      ]
+      "values": ["trade", "signal", "alert", "heartbeat"]
     },
     "public.ledger_entry_side": {
       "name": "ledger_entry_side",
       "schema": "public",
-      "values": [
-        "debit",
-        "credit"
-      ]
+      "values": ["debit", "credit"]
     },
     "public.ledger_reconciliation_status": {
       "name": "ledger_reconciliation_status",
       "schema": "public",
-      "values": [
-        "MATCHED",
-        "DRIFT",
-        "UNKNOWN"
-      ]
+      "values": ["MATCHED", "DRIFT", "UNKNOWN"]
     },
     "public.sentiment": {
       "name": "sentiment",
       "schema": "public",
-      "values": [
-        "bullish",
-        "bearish",
-        "neutral"
-      ]
+      "values": ["bullish", "bearish", "neutral"]
     },
     "public.signal_source": {
       "name": "signal_source",
       "schema": "public",
-      "values": [
-        "reddit",
-        "twitter",
-        "rss"
-      ]
+      "values": ["reddit", "twitter", "rss"]
     },
     "public.llm_provider": {
       "name": "llm_provider",
       "schema": "public",
-      "values": [
-        "OPENAI",
-        "ANTHROPIC",
-        "GOOGLE",
-        "XAI",
-        "DEEPSEEK"
-      ]
+      "values": ["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK"]
     },
     "public.strategy_plugin_stage": {
       "name": "strategy_plugin_stage",
@@ -3186,37 +3034,22 @@
     "public.strategy_type": {
       "name": "strategy_type",
       "schema": "public",
-      "values": [
-        "MOMENTUM",
-        "SENTIMENT_ONLY",
-        "MEAN_REVERSION"
-      ]
+      "values": ["MOMENTUM", "SENTIMENT_ONLY", "MEAN_REVERSION"]
     },
     "public.direction": {
       "name": "direction",
       "schema": "public",
-      "values": [
-        "LONG",
-        "SHORT"
-      ]
+      "values": ["LONG", "SHORT"]
     },
     "public.order_status": {
       "name": "order_status",
       "schema": "public",
-      "values": [
-        "PENDING",
-        "FILLED",
-        "FAILED",
-        "BLOCKED"
-      ]
+      "values": ["PENDING", "FILLED", "FAILED", "BLOCKED"]
     },
     "public.position_status": {
       "name": "position_status",
       "schema": "public",
-      "values": [
-        "OPEN",
-        "CLOSED"
-      ]
+      "values": ["OPEN", "CLOSED"]
     }
   },
   "schemas": {},

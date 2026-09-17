@@ -20,8 +20,8 @@
  * is protected even if the proxy were bypassed or misconfigured.
  */
 
+import { extractApiKey } from "@/lib/api-key";
 import { agentIdentities, type Identity, resolveApiKey } from "@/lib/identity";
-import { extractApiKey } from "@/lib/notification-reader";
 import {
   can,
   DEMO_PERMISSIONS,
