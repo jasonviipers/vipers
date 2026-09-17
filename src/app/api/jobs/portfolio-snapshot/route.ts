@@ -1,4 +1,4 @@
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import {
   backfillPortfolioSnapshots,
   runPortfolioSnapshotJob,
@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  * Body (all optional): { "backfillDays": 7 }
  */
 export const POST = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "jobs" });
 
   // Mutating rollup trigger — write-access only (demo key is read-only).

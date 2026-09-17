@@ -1,5 +1,5 @@
 import { reactivateStrategyPlugin } from "@/ai/capital-engine/strategy-lifecycle";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { requirePermission } from "@/lib/session-auth";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ const REASON_STATUS: Record<string, number> = {
  */
 export const POST = withEvlog(
   async (request: Request, ctx: { params: Promise<{ id: string }> }) => {
-    const logger = useLogger();
+    const logger = getLogger();
     logger.set({ integration: "strategies" });
 
     const auth = requirePermission(request, "strategies:manage");

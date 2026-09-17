@@ -4,7 +4,7 @@ import {
   PROMOTION_STAGES,
   type PromotionRecord,
 } from "@/ai/capital-engine/promotion";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { requirePermission } from "@/lib/session-auth";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ const REASON_STATUS: Record<string, number> = {
  */
 export const POST = withEvlog(
   async (request: Request, ctx: { params: Promise<{ id: string }> }) => {
-    const logger = useLogger();
+    const logger = getLogger();
     logger.set({ integration: "strategies" });
 
     // Stage advancement changes capital risk posture — strategy managers

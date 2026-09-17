@@ -42,6 +42,12 @@ import { fetchTechnicals } from "../tools/technical-analysis-tool";
 
 export interface ConsensusWorkflowInput {
   asset: string;
+  /**
+   * Optional cancellation: aborting cancels the in-flight isolated plugin
+   * runs (the workers are terminated immediately) — the workflow surface
+   * for shutting down or revoking a pass mid-run.
+   */
+  signal?: AbortSignal;
   source: string;
 }
 
@@ -183,6 +189,7 @@ export async function runConsensusWorkflow(
       },
       input: { candidate: noTrade },
       manifest: CONSENSUS_PLUGIN_MANIFEST,
+      signal: input.signal,
     });
     await persistDecisionSnapshot({
       asset: proposal.asset,
@@ -228,6 +235,7 @@ export async function runConsensusWorkflow(
     },
     input: { candidate: intent },
     manifest: CONSENSUS_PLUGIN_MANIFEST,
+    signal: input.signal,
   });
   const intentHash = hashCapitalIntent(isolatedIntent);
 

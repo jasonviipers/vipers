@@ -18,7 +18,8 @@
     "db:scraper:generate": "drizzle-kit generate --config=drizzle.scraper.config.ts",
     "db:scraper:migrate": "drizzle-kit migrate --config=drizzle.scraper.config.ts",
     "db:scraper:push": "drizzle-kit push --config=drizzle.scraper.config.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.53",

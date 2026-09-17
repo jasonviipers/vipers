@@ -78,6 +78,7 @@ Production schedules hourly rollups from `instrumentation.ts` (dev triggers them
 
 ```
 ├── instrumentation.ts          # Prod-only job scheduler (portfolio + leaderboard rollups)
+├── proxy.ts                    # Next.js proxy: optimistic /api auth gate + session refresh
 ├── drizzle.config.ts           # Drizzle Kit config (schema, migrations, Postgres)
 ├── src/
 │   ├── app/                    # Next.js App Router
@@ -86,10 +87,11 @@ Production schedules hourly rollups from `instrumentation.ts` (dev triggers them
 │   │   │                       # One terminal page per domain (TerminalLayout + view)
 │   │   └── api/
 │   │       ├── agents/db/      # Fleet payload: configs + runtime status + stats
+│   │       ├── auth/           # validate (key→session), session (whoami), logout
 │   │       ├── consensus/proposals/  # Proposals + vote counts (DB w/ events fallback)
 │   │       ├── events/recent/  # Live runtime event feed (notification source)
 │   │       ├── jobs/           # Manual job triggers (portfolio-snapshot, leaderboard-score)
-│   │       ├── notifications/read-state/  # Per-reader notification sync (API-key identity)
+│   │       ├── notifications/read-state/  # Per-identity read sync (session or key)
 │   │       ├── positions/      # Open + closed positions
 │   │       ├── quotes/         # Ticker quotes (2-layer cached)
 │   │       ├── signals/        # Signal feed + hourly activity
@@ -116,7 +118,11 @@ Production schedules hourly rollups from `instrumentation.ts` (dev triggers them
 │   │   ├── mutations/          # Optimistic mutation hooks (strategies, notifications)
 │   │   ├── leaderboard-score.ts # Composite score + activity floor (single source of truth)
 │   │   ├── evlog.ts            # Structured logging (wide events)
-│   │   └── …                   # auth, api-key, formatting, terminal settings
+│   │   ├── session.ts          # HMAC-signed session tokens + Redis revocation
+│   │   ├── identity.ts         # Who is calling: operator / demo / per-agent identity
+│   │   ├── permissions.ts      # What an identity may do (grant sets)
+│   │   ├── session-auth.ts     # Route guards: authenticate / requirePermission
+│   │   └── …                   # api-key, formatting, terminal settings
 │   ├── ai/                    # AI SDK agent swarm
 │   │   ├── agents/             # Agent configs + AI SDK-backed agents
 │   │   ├── tools/              # Capabilities: market data, sentiment, technicals,
@@ -127,6 +133,12 @@ Production schedules hourly rollups from `instrumentation.ts` (dev triggers them
 │   │   └── broker/             # Broker connectivity (OKX, paper book)
 │   └── env.ts                  # Validated env schema (t3-oss/env-nextjs + zod)
 ```
+
+## Authentication
+
+Browser access is authenticated with a short-lived HMAC-signed session cookie (HttpOnly, ~15 min sliding window, refreshed by `src/proxy.ts`). The permanent API key is **never stored client-side** — `POST /api/auth/validate` exchanges it for a cookie once, and `POST /api/auth/logout` revokes it (Redis-best-effort). `GET /api/auth/session` reports the current principal.
+
+Each request is both **authenticated** (who — `src/lib/identity.ts`: operator, demo, or per-agent identity) and **authorized** (what — `src/lib/permissions.ts`: e.g. `run:agent`, `execution:submit`, `credentials:manage`). Agents authenticate through `AGENT_API_KEYS` (one key per fleet member) or the operator key; in-process runs are always attributed to their own agent identity. Demo is read-only; only the executor may submit orders. Route handlers re-verify identity and permissions independently of the proxy — the proxy is an optimistic gate, not the authorization boundary.
 
 ## Database (local Postgres via Docker)
 
@@ -146,7 +158,14 @@ Other database commands: `db:generate` (create migrations from schema), `db:migr
 
 ## Getting Started
 
-1. Copy `.env.example` to `.env` and fill in the required keys (database URL, Google AI key, terminal API keys; `REDIS_URL` optional).
+1. Copy `.env.example` to `.env` and fill in the required keys:
+   - `DATABASE_URL` — Postgres (pooled, `sslmode=verify-full`)
+   - Model provider keys — whichever you actually use (`GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`)
+   - Terminal keys — `API_KEY_VALID` (operator, matches `API_KEY_PATTERN`), `DEMO_API_KEY` (read-only login), and optionally `AGENT_API_KEYS` (one key per fleet agent)
+   - `SESSION_SECRET` — signs the session cookie (`openssl rand -base64 32`); **required in production**, dev falls back to `DATABASE_URL`
+   - `SECRET_BOX_KEY` — encrypts stored broker/LLM credentials (`openssl rand -base64 32`); **required in production**
+   - `REDIS_URL` (optional) — cache + session revocation
+   - `PAPER_BOOK_NOTIONAL_USD` — synthetic balance backing paper execution
 2. Start Postgres and push the schema (above).
 3. Run the dev server:
 

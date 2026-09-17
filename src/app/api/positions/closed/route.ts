@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { agents } from "@/db/schema/agent";
 import { positions } from "@/db/schema/trading";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import type { ClosedPosition } from "@/lib/queries/positions";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ const LIMIT = 100;
  * Rows with zero quantity (shouldn't exist, but guard anyway) report null.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "positions" });
 
   try {

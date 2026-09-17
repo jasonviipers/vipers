@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/db";
 import { riskControls } from "@/db/schema/risk";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { requireWriteAccess } from "@/lib/route-auth";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ const killSwitchSchema = z.object({ enabled: z.boolean() });
  * Read endpoint (the settings UI needs the state on load); no secrets.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "risk" });
 
   const [row] = await db
@@ -34,7 +34,7 @@ export const GET = withEvlog(async () => {
  * order submission server-side regardless of which client armed it.
  */
 export const POST = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "risk" });
 
   const auth = requireWriteAccess(request);

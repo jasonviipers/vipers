@@ -5,7 +5,7 @@ import {
   listAgentLlmConfigs,
   setAgentLlmProvider,
 } from "@/lib/agent-llm-config";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { LLM_PROVIDER_IDS } from "@/lib/llm-credentials";
 import { requireWriteAccess } from "@/lib/route-auth";
 
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
  * are exposed, only which agent is pinned to which provider.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "settings" });
 
   const agents = await listAgentLlmConfigs();
@@ -38,7 +38,7 @@ const agentLlmSchema = z.object({
  * the next agent call; the model-resolution cache is invalidated here.
  */
 export const PUT = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "settings" });
 
   const auth = requireWriteAccess(request);

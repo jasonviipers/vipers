@@ -2,7 +2,7 @@ import { desc } from "drizzle-orm";
 import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { db } from "@/db";
 import { signals } from "@/db/schema/signals";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import type {
   RecentSignal,
   RecentSignalsResponse,
@@ -22,7 +22,7 @@ const LIMIT = 30;
  * empty panel — mirroring the signals activity route's fallback.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "signals" });
 
   let items: RecentSignal[] = [];

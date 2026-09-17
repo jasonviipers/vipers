@@ -90,11 +90,20 @@ export const CONSENSUS_PLUGIN_FIXTURES: StrategyPluginFixture[] = [
  * the manifest/evidence identity host-side before it is trusted.
  */
 export async function runIsolatedPluginSource(input: {
+  /**
+   * Per-run wall-clock budget override (ms), within the hard ceiling in
+   * plugin-worker.ts. Optional — the default budget applies otherwise.
+   */
+  budgetMs?: number;
   evidence: StrategyEvidenceInput;
+  /** Heap cap override (MB), within the hard ceiling in plugin-worker.ts. */
+  heapLimitMb?: number;
   input: Record<string, unknown>;
   /** Only pluginVersion is consumed (decision identity check). */
   manifest: Pick<StrategyPluginManifest, "pluginVersion">;
   pluginId: string;
+  /** Cancellation: aborting terminates the in-flight isolated run. */
+  signal?: AbortSignal;
   source: string;
 }): Promise<PluginDecision> {
   // No full-manifest re-parse here: full schema validation is the REGISTRY
@@ -102,7 +111,10 @@ export async function runIsolatedPluginSource(input: {
   // pluginVersion for the decision identity check.
   const decision = validateCapitalDecision(
     await runPluginSourceInIsolatedWorker({
+      budgetMs: input.budgetMs,
+      heapLimitMb: input.heapLimitMb,
       input: input.input,
+      signal: input.signal,
       source: input.source,
     }),
   );

@@ -92,7 +92,7 @@ mock.module("@/lib/session-auth", () => ({
 
 mock.module("@/lib/evlog", () => ({
   log: { error: () => {}, warn: () => {} },
-  useLogger: () => ({ error: () => {}, set: () => {}, warn: () => {} }),
+  getLogger: () => ({ error: () => {}, set: () => {}, warn: () => {} }),
   withEvlog: (handler: unknown) => handler,
 }));
 

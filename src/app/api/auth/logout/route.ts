@@ -1,4 +1,4 @@
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import {
   clearSessionCookie,
   revokeSession,
@@ -14,7 +14,7 @@ import { readCookie } from "@/lib/session-auth";
  * rejected even if copied, then clears the HttpOnly cookie from the browser.
  */
 export const POST = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "auth" });
 
   const token = readCookie(request, SESSION_COOKIE);

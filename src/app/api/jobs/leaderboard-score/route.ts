@@ -1,4 +1,4 @@
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { runLeaderboardScoreJob } from "@/lib/jobs/leaderboard-score-job";
 import { requireWriteAccess } from "@/lib/route-auth";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * upserts one stats row per configured agent.
  */
 export const POST = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "jobs" });
 
   // Mutating rollup trigger — write-access only (demo key is read-only).

@@ -10,14 +10,13 @@ import "server-only";
  * fallback.
  *
  * Ciphertext format: `v1.<iv-b64>.<tag-b64>.<ciphertext-b64>`.
- */
-
-import {
+ */ import {
   createCipheriv,
   createDecipheriv,
   createHash,
   randomBytes,
 } from "node:crypto";
+import { decodeSecretBoxKey } from "./secret-box-key";
 
 const FALLBACK_SALT = "viipers-secret-box-v1";
 
@@ -27,16 +26,20 @@ function loadKey(): Buffer {
   if (cachedKey) {
     return cachedKey;
   }
-  const raw = process.env.SECRET_BOX_KEY?.trim();
-  if (raw) {
-    const key = Buffer.from(raw, "base64");
-    if (key.length !== 32) {
-      throw new Error(
-        "SECRET_BOX_KEY must decode to exactly 32 bytes (generate with: openssl rand -base64 32)",
-      );
-    }
-    cachedKey = key;
+  // Single decode/validate rule, shared with env validation so boot and
+  // runtime can never disagree about what a valid key is.
+  const decoded = decodeSecretBoxKey(process.env.SECRET_BOX_KEY);
+  if (decoded) {
+    cachedKey = decoded;
     return cachedKey;
+  }
+
+  if (process.env.SECRET_BOX_KEY?.trim()) {
+    // Present but invalid: the same condition t3-env rejects at boot in
+    // the Next runtime; keep a loud runtime guard for non-Next contexts.
+    throw new Error(
+      "SECRET_BOX_KEY must decode to exactly 32 bytes (generate with: openssl rand -base64 32)",
+    );
   }
 
   if (process.env.NODE_ENV === "production") {

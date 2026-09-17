@@ -1,6 +1,6 @@
 import type { AgentEvent } from "@/ai/events/contracts";
 import { agentRuntime } from "@/ai/runtime/agent-runtime";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 export const dynamic = "force-dynamic";
@@ -108,7 +108,7 @@ function toId(event: AgentEvent): string {
  * messages, so operators can inspect what the swarm actually decided.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "events" });
 
   const settings = await getRuntimeSettings();

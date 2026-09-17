@@ -1,4 +1,4 @@
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { SESSION_COOKIE } from "@/lib/session";
 import { readCookie, sessionFromRequest } from "@/lib/session-auth";
 
@@ -10,7 +10,7 @@ import { readCookie, sessionFromRequest } from "@/lib/session-auth";
  * gate on `authenticated` and `demo` without ever holding a secret.
  */
 export const GET = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "auth" });
 
   const token = readCookie(request, SESSION_COOKIE);

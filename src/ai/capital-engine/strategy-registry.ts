@@ -223,9 +223,15 @@ export async function verifyPluginFixtures(
  * under that hash, or the isolated run fails the boundary checks.
  */
 export async function runRegisteredStrategyPlugin(input: {
+  /** Per-run budget override (ms), capped by the worker's hard ceiling. */
+  budgetMs?: number;
   evidence: StrategyEvidenceInput;
+  /** Per-run heap cap override (MB), capped by the worker's hard ceiling. */
+  heapLimitMb?: number;
   input: Record<string, unknown>;
   manifest: unknown;
+  /** Cancellation: aborting terminates the in-flight isolated run. */
+  signal?: AbortSignal;
 }): Promise<PluginDecision> {
   const manifest = validateStrategyPluginManifest(input.manifest);
   const registered = registry.get(
@@ -242,10 +248,13 @@ export async function runRegisteredStrategyPlugin(input: {
   assertPluginSourceSafe(registered.source);
 
   return runIsolatedPluginSource({
+    budgetMs: input.budgetMs,
     evidence: input.evidence,
+    heapLimitMb: input.heapLimitMb,
     input: input.input,
     manifest: registered.manifest,
     pluginId: manifest.pluginId,
+    signal: input.signal,
     source: registered.source,
   });
 }

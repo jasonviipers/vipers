@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { db } from "@/db";
 import { positions } from "@/db/schema/trading";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ interface Bucket {
  * SHORT red).
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "trades" });
 
   const bucketMs = (WINDOW_HOURS / BUCKET_COUNT) * 3_600_000; // 1h

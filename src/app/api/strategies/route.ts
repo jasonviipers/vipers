@@ -6,7 +6,7 @@ import {
   strategyAssets,
   strategySignalSources,
 } from "@/db/schema/strategies";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import {
   type StrategiesResponse,
   type StrategyDto,
@@ -73,7 +73,7 @@ export async function insertStrategy(
  * normalized assets and signal sources aggregated back into arrays.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "strategies" });
 
   try {
@@ -126,7 +126,7 @@ export const GET = withEvlog(async () => {
 
 /** POST /api/strategies — create a strategy with assets + signal sources. */
 export const POST = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "strategies" });
 
   const auth = requireWriteAccess(request);

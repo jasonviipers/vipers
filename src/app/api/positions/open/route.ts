@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { agents } from "@/db/schema/agent";
 import { marketPrices, positions } from "@/db/schema/trading";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import type { OpenPosition } from "@/lib/queries/positions";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ const LIMIT = 50;
  * pnlPct are the position row's cached values — never recomputed client-side.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "positions" });
 
   try {

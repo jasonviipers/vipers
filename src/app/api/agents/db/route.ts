@@ -3,7 +3,7 @@ import { agentConfigs } from "@/ai/agents/config";
 import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { db } from "@/db";
 import { agentStats, agents, equitySnapshots } from "@/db/schema/agent";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
  * stats. No invented performance history is ever generated.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "agents" });
 
   interface DbFlavor {

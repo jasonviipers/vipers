@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { db } from "@/db";
 import { signals } from "@/db/schema/signals";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +28,7 @@ interface Bucket {
  * than an empty grid. Buckets with no signals render as zero-height.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "signals" });
 
   const bucketMs = (WINDOW_HOURS / BUCKET_COUNT) * 3_600_000; // 1h

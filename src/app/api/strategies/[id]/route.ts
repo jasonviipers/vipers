@@ -6,7 +6,7 @@ import {
   strategyAssets,
   strategySignalSources,
 } from "@/db/schema/strategies";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import {
   type StrategyDto,
   type StrategyInput,
@@ -31,7 +31,7 @@ const strategyPatchSchema = strategyInputSchema.partial();
  * unknown id, 400 on validation failure.
  */
 export const PATCH = withEvlog(async (request: Request, ctx: Params) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "strategies" });
 
   const auth = requireWriteAccess(request);
@@ -151,7 +151,7 @@ export const PATCH = withEvlog(async (request: Request, ctx: Params) => {
  * ON DELETE CASCADE.
  */
 export const DELETE = withEvlog(async (request: Request, ctx: Params) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "strategies" });
 
   const auth = requireWriteAccess(request);

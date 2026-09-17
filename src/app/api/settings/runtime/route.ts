@@ -1,4 +1,4 @@
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { invalidateActiveProviderCache } from "@/lib/llm-model";
 import { requireWriteAccess } from "@/lib/route-auth";
 import {
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * Read endpoint; mirrors the pipeline-enforcing values back to the UI.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "settings" });
 
   const settings = await getRuntimeSettings();
@@ -29,7 +29,7 @@ export const GET = withEvlog(async () => {
  * mode. Zod-validated; the effective settings are echoed back.
  */
 export const PUT = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "settings" });
 
   const auth = requireWriteAccess(request);

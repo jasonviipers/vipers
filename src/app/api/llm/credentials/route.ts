@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import {
   deleteLlmApiKey,
   isLlmProviderId,
@@ -26,7 +26,7 @@ const providerSchema = z.object({
  * plaintext keys.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "llm" });
 
   const providers = await listLlmKeyStatuses();
@@ -39,7 +39,7 @@ export const GET = withEvlog(async () => {
  * env var at model-resolution time.
  */
 export const PUT = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "llm" });
 
   const auth = requireWriteAccess(request);
@@ -89,7 +89,7 @@ export const PUT = withEvlog(async (request: Request) => {
  * resolution falls back to the env var when present. Write-access only.
  */
 export const DELETE = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "llm" });
 
   const auth = requireWriteAccess(request);

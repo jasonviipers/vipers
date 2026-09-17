@@ -8,7 +8,7 @@ import {
 import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { fetchMarketSignals } from "@/ai/tools/market-signals-tool";
 import { fetchTechnicals } from "@/ai/tools/technical-analysis-tool";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { requirePermission } from "@/lib/session-auth";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +53,7 @@ interface RunResponse {
  */
 export const POST = withEvlog(
   async (request: Request, ctx: { params: Promise<{ id: string }> }) => {
-    const logger = useLogger();
+    const logger = getLogger();
     logger.set({ integration: "agents" });
 
     // Spends an LLM call — write-capable identity only (demo is read-only).

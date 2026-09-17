@@ -3,7 +3,7 @@ import {
   fetchMarketQuotes,
   quoteToTicker,
 } from "@/ai/tools/market-quote-tool";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * asset degrade gracefully because the tool falls back to stale cache.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "market-data" });
 
   try {

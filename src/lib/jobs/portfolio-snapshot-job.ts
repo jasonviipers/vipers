@@ -219,7 +219,7 @@ export async function backfillPortfolioSnapshots({
 
 export async function runPortfolioSnapshotJob(): Promise<void> {
   // The job runs on an interval (outside any request scope), so it uses the
-  // global `log` API rather than the request-scoped useLogger().
+  // global `log` API rather than the request-scoped getLogger().
   try {
     const { availableCapital, investedCapital, totalCapital } =
       await computeLedgerCapital();

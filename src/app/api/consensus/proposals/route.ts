@@ -3,7 +3,7 @@ import { agentRuntime } from "@/ai/runtime/agent-runtime";
 import { db } from "@/db";
 import { agents } from "@/db/schema/agent";
 import { consensusProposals, consensusVotes } from "@/db/schema/consensus";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import type {
   ConsensusProposal,
   ConsensusProposalsResponse,
@@ -25,7 +25,7 @@ const LIMIT = 20;
  * same fallback convention as the signals/trades activity routes.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "consensus" });
 
   let items: ConsensusProposal[] = [];

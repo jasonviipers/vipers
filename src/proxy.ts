@@ -55,7 +55,7 @@ export async function proxy(request: NextRequest) {
 
     // Valid session → refresh the sliding window and forward.
     const fresh = refreshSession(session);
-    const response = await evlog(request);
+    const response = (await evlog(request)) as NextResponse;
     response.cookies.set(
       SESSION_COOKIE,
       encodeSession(fresh),

@@ -23,8 +23,14 @@ import type { PluginDecision } from "./plugin-runtime";
  *   by construction — not merely rejected by pattern;
  * - a hard wall-clock budget: sync work is bounded by the vm timeout, async
  *   work by `worker.terminate()` at the deadline, so a plugin cannot hang
- *   the pipeline — plus a 128MB heap cap (`resourceLimits`) so it cannot
- *   memory-DoS the host either;
+ *   the pipeline — plus a heap cap (`resourceLimits`) so it cannot
+ *   memory-DoS the host either. Callers may tune the per-run budget/heap
+ *   via `budgetMs`/`heapLimitMb`, but only within hard ceilings
+ *   (MAX_PLUGIN_EXECUTION_BUDGET_MS / MAX_PLUGIN_HEAP_MB) — beyond them
+ *   the run is refused, because the budget is a security parameter;
+ * - cancellation: an AbortSignal terminates the worker immediately, so a
+ *   supervisor can revoke an in-flight run instead of waiting out its
+ *   budget;
  * - input/output size caps: payloads crossing the boundary are
  *   JSON-serialized and size-limited before the host ever sees them.
  *
@@ -37,6 +43,19 @@ import type { PluginDecision } from "./plugin-runtime";
 /** Hard wall-clock budget for a full plugin run, including worker spin-up. */
 export const PLUGIN_EXECUTION_BUDGET_MS = 5_000;
 
+/**
+ * Ceiling for caller-requested budgets: a run may ask for a longer or
+ * shorter budget than the default, but never beyond this bound — the
+ * wall clock is a security property, so "configurable" cannot mean
+ * "unlimited". Requesting more is refused (not silently clamped):
+ * silently granting less than asked would hide misconfiguration.
+ */
+export const MAX_PLUGIN_EXECUTION_BUDGET_MS = 30_000;
+
+/** Default heap cap; callers may raise it up to MAX_PLUGIN_HEAP_MB. */
+export const PLUGIN_HEAP_LIMIT_MB = 128;
+export const MAX_PLUGIN_HEAP_MB = 512;
+
 /** Sync-code ceiling inside the vm realm (vm timeout for runInContext). */
 const VM_SYNC_TIMEOUT_MS = PLUGIN_EXECUTION_BUDGET_MS;
 
@@ -45,7 +64,21 @@ const MAX_RESULT_BYTES = 32 * 1024;
 const MAX_INPUT_BYTES = 128 * 1024;
 
 export interface IsolatedPluginSourceInput {
+  /**
+   * Wall-clock budget for THIS run in ms. Optional; defaults to
+   * PLUGIN_EXECUTION_BUDGET_MS. Must be a positive finite number and no
+   * more than MAX_PLUGIN_EXECUTION_BUDGET_MS.
+   */
+  budgetMs?: number;
+  /** Heap cap for the isolated worker in MB (ceiling MAX_PLUGIN_HEAP_MB). */
+  heapLimitMb?: number;
   input: Record<string, unknown>;
+  /**
+   * Cancellation: aborting the signal terminates the worker immediately
+   * (the run settles as cancelled, before its budget expires). An
+   * already-aborted signal refuses the run without spawning a worker.
+   */
+  signal?: AbortSignal;
   source: string;
 }
 
@@ -108,13 +141,55 @@ function assertWithinLimit(
 }
 
 /**
+ * Validate caller-requested budgets against the hard ceilings. Throws on
+ * anything that is not a positive finite number within bounds — a budget
+ * is a security parameter, so bad values surface loudly instead of being
+ * coerced.
+ */
+function resolveBudgets(
+  budgetMs: number | undefined,
+  heapLimitMb: number | undefined,
+): { budgetMs: number; heapLimitMb: number } {
+  const resolvedBudget = budgetMs ?? PLUGIN_EXECUTION_BUDGET_MS;
+  if (
+    !Number.isFinite(resolvedBudget) ||
+    resolvedBudget <= 0 ||
+    resolvedBudget > MAX_PLUGIN_EXECUTION_BUDGET_MS
+  ) {
+    throw new Error(
+      `plugin execution budget must be between 1 and ${MAX_PLUGIN_EXECUTION_BUDGET_MS}ms (got ${String(budgetMs)})`,
+    );
+  }
+  const resolvedHeap = heapLimitMb ?? PLUGIN_HEAP_LIMIT_MB;
+  if (
+    !Number.isInteger(resolvedHeap) ||
+    resolvedHeap <= 0 ||
+    resolvedHeap > MAX_PLUGIN_HEAP_MB
+  ) {
+    throw new Error(
+      `plugin heap limit must be between 1 and ${MAX_PLUGIN_HEAP_MB}MB (got ${String(heapLimitMb)})`,
+    );
+  }
+  return { budgetMs: resolvedBudget, heapLimitMb: resolvedHeap };
+}
+
+/**
  * Evaluate plugin source in a fresh, capability-less worker realm. Throws
  * (never returns a decision) when the plugin attempts anything beyond pure
  * computation on its input: forbidden modules, code generation, budgets.
+ * The run settles early with a cancellation error when `signal` aborts.
  */
 export async function runPluginSourceInIsolatedWorker(
   input: IsolatedPluginSourceInput,
 ): Promise<PluginDecision> {
+  const { budgetMs, heapLimitMb } = resolveBudgets(
+    input.budgetMs,
+    input.heapLimitMb,
+  );
+  if (input.signal?.aborted) {
+    throw new Error("plugin execution was cancelled before it started");
+  }
+
   const sourceJson = JSON.stringify(input.source);
   if (sourceJson === undefined) {
     throw new Error("plugin source must be a string");
@@ -130,22 +205,34 @@ export async function runPluginSourceInIsolatedWorker(
   const request: RunSourceRequest = {
     input: JSON.parse(inputJson),
     source: JSON.parse(sourceJson),
-    syncTimeoutMs: VM_SYNC_TIMEOUT_MS,
+    syncTimeoutMs: Math.min(budgetMs, VM_SYNC_TIMEOUT_MS),
     type: "run_source",
   };
 
-  const response = await executeInWorker(request);
+  const response = await executeInWorker(request, {
+    budgetMs,
+    heapLimitMb,
+    signal: input.signal,
+  });
   return validateResultSize(response);
 }
 
-function executeInWorker(request: RunSourceRequest): Promise<WorkerResponse> {
+function executeInWorker(
+  request: RunSourceRequest,
+  options: {
+    budgetMs: number;
+    heapLimitMb: number;
+    signal?: AbortSignal;
+  },
+): Promise<WorkerResponse> {
   return new Promise<WorkerResponse>((resolve, reject) => {
-    // Hard 128MB heap cap: a plugin cannot memory-DoS the host even inside
-    // its own worker (closing the unbounded-allocation hole that the
-    // wall-clock budget alone leaves open).
+    // Heap cap (caller-tunable up to the hard ceiling): a plugin cannot
+    // memory-DoS the host even inside its own worker.
     const worker = new Worker(WORKER_SOURCE, {
       eval: true,
-      resourceLimits: { maxOldGenerationSizeMb: 128 },
+      resourceLimits: {
+        maxOldGenerationSizeMb: options.heapLimitMb,
+      },
     });
     let settled = false;
 
@@ -153,10 +240,26 @@ function executeInWorker(request: RunSourceRequest): Promise<WorkerResponse> {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
+      options.signal?.removeEventListener("abort", onAbort);
       worker.removeAllListeners();
       void worker.terminate();
       fn();
     };
+
+    // Cancellation: terminate the worker the moment the caller aborts —
+    // this is what lets a workflow shut down (or a supervisor revoke a
+    // run) without waiting out the full wall-clock budget.
+    const onAbort = () => {
+      finish(() => {
+        const reason = options.signal?.reason;
+        reject(
+          reason instanceof Error
+            ? reason
+            : new Error("plugin execution was cancelled"),
+        );
+      });
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
 
     // Hard wall-clock budget: a hanging async plugin is killed at the
     // deadline; a runaway sync loop trips the vm timeout inside the realm.
@@ -164,11 +267,11 @@ function executeInWorker(request: RunSourceRequest): Promise<WorkerResponse> {
       finish(() =>
         reject(
           new Error(
-            `plugin execution exceeded the ${PLUGIN_EXECUTION_BUDGET_MS}ms isolation budget and was terminated`,
+            `plugin execution exceeded the ${options.budgetMs}ms isolation budget and was terminated`,
           ),
         ),
       );
-    }, PLUGIN_EXECUTION_BUDGET_MS);
+    }, options.budgetMs);
 
     worker.once("message", (message: WorkerResponse) => {
       finish(() => resolve(message));

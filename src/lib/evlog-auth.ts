@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { useLogger } from "@/lib/evlog";
+import { getLogger } from "@/lib/evlog";
 import { classifyApiKey } from "@/lib/identity";
 import { sessionFromRequest } from "@/lib/session-auth";
 
@@ -37,8 +37,7 @@ function apiKeySubject(key: string): string {
  * used. Returns `true` when an identity was identified, `false` otherwise.
  */
 export async function identifyEvlogUser(request: Request): Promise<boolean> {
-  // biome-ignore lint/correctness/useHookAtTopLevel: evlog's useLogger is a request logger, not a React hook.
-  const logger = useLogger();
+  const logger = getLogger();
 
   const session = sessionFromRequest(request);
   if (session) {

@@ -1,5 +1,6 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import * as z from "zod";
+import { secretBoxKeySchema } from "@/lib/secret-box-key";
 
 export const env = createEnv({
   server: {
@@ -18,8 +19,11 @@ export const env = createEnv({
     XAI_API_KEY: z.string().optional(),
     DEEPSEEK_API_KEY: z.string().optional(),
     // Encrypts broker/LLM credentials stored in the DB (written via the
-    // /settings UI). Required in production; dev derives a fallback key.
-    SECRET_BOX_KEY: z.string().optional(),
+    // /settings UI). A present-but-invalid key (not base64 of exactly 32
+    // bytes) fails the boot here — the old behavior was a raw 500 on the
+    // first credential save. Required in production; dev derives a
+    // fallback key.
+    SECRET_BOX_KEY: secretBoxKeySchema.optional(),
     // Signs short-lived session cookies (viipers_session). HMAC-SHA256.
     // Required in production; dev derives a fallback key from the DB URL.
     SESSION_SECRET: z.string().optional(),

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { identifyEvlogUser } from "@/lib/evlog-auth";
 import { resolveApiKey } from "@/lib/identity";
 import {
@@ -20,7 +20,7 @@ import {
  * request; nothing permanent lives in the browser.
  */
 export const POST = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "auth" });
 
   await identifyEvlogUser(request);

@@ -82,7 +82,7 @@ mock.module("@/lib/session-auth", () => ({
 // wrapper is not under test here; pass the handler straight through.
 mock.module("@/lib/evlog", () => ({
   log: { error: () => {}, warn: () => {} },
-  useLogger: () => ({
+  getLogger: () => ({
     error: () => {},
     set: () => {},
     warn: () => {},

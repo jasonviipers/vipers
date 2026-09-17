@@ -2,7 +2,7 @@ import { and, eq, lt, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { notificationReads } from "@/db/schema/notifications";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { requestReaderId } from "@/lib/notification-reader";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ const MAX_ROWS_PER_READER = 500;
  * empty state so the bell degrades to local-only reads instead of failing.
  */
 export const GET = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "notifications" });
 
   const readerId = requestReaderId(request);
@@ -51,7 +51,7 @@ export const GET = withEvlog(async (request: Request) => {
  * though the events feed is a rotating ring buffer.
  */
 export const PUT = withEvlog(async (request: Request) => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "notifications" });
 
   const readerId = requestReaderId(request);
