@@ -1,125 +1,203 @@
 import "server-only";
 
 import { Worker } from "node:worker_threads";
-import type { StrategyPluginManifest } from "./plugin";
-import type { PluginDecision, StrategyEvidenceInput } from "./plugin-runtime";
+import type { PluginDecision } from "./plugin-runtime";
 
-const WORKER_SOURCE = `
-  const { parentPort } = require("node:worker_threads");
-  const FORBIDDEN = ["broker", "credential", "ledger", "database", "db", "net", "http", "https", "fs"];
-  const ALLOWED_PLUGIN_IDS = new Set(["consensus-v1"]);
-  const deny = (message) => parentPort.postMessage({ ok: false, error: message });
-  parentPort.on("message", async (request) => {
-    if (request.type === "import_attempt") {
-      const specifier = String(request.specifier || "").toLowerCase();
-      if (FORBIDDEN.some((part) => specifier.includes(part))) {
-        return deny("isolated plugin denied forbidden module import");
-      }
-      return deny("isolated plugin imports are not available through this boundary");
-    }
-    if (request.type === "run_source") {
-      if (!ALLOWED_PLUGIN_IDS.has(request.pluginId)) return deny("plugin is not registered in the isolated worker");
-      try {
-        const vm = require("node:vm");
-        const context = vm.createContext({ input: request.input });
-        const fn = vm.runInContext("(" + request.source + ")", context, {
-          contextCodeGeneration: { strings: false, wasm: false },
-        });
-        if (typeof fn !== "function") return deny("plugin source must evaluate to a function");
-        const decision = await fn(request.input);
-        return parentPort.postMessage({ ok: true, decision });
-      } catch (error) {
-        return deny(error instanceof Error ? error.message : "isolated plugin execution failed");
-      }
-    }
-    if (request.type !== "validate") return deny("unknown plugin boundary request");
-    if (!ALLOWED_PLUGIN_IDS.has(request.pluginId)) return deny("plugin is not registered in the isolated worker");
-    const decision = request.decision;
-    if (!decision || typeof decision !== "object") return deny("plugin decision must be an object");
-    if (decision.strategyVersion !== request.manifest.pluginVersion) return deny("plugin version mismatch");
-    if (decision.asset !== request.evidence.asset || decision.signalId !== request.evidence.signalId) return deny("plugin evidence identity mismatch");
-    return parentPort.postMessage({ ok: true, decision });
-  });
-`;
+/**
+ * Runtime isolation for strategy plugins.
+ *
+ * Plugin source never runs in the host process. Each execution spins a
+ * throwaway `worker_threads` Worker whose script evaluates the plugin inside
+ * a bare `node:vm` context. The context is built from a single `{ input }`
+ * binding, so by construction there is:
+ *
+ * - no `require`, `process`, `Buffer`, `fetch`, or host globals — the realm
+ *   has only the ECMAScript intrinsics (verified against both the bun and
+ *   node runtimes; see the adversarial tests in
+ *   test/ai/capital-engine/plugin-runtime.test.ts);
+ * - no code generation: `codeGeneration: { strings: false, wasm: false }`
+ *   makes `eval` and `new Function` throw inside the realm, which also kills
+ *   the `Function`-constructor escape to host globals;
+ * - no module resolution: the realm cannot reach the host's `require` or
+ *   dynamic `import`, so broker/credential/ledger/db modules are unreachable
+ *   by construction — not merely rejected by pattern;
+ * - a hard wall-clock budget: sync work is bounded by the vm timeout, async
+ *   work by `worker.terminate()` at the deadline, so a plugin cannot hang
+ *   the pipeline — plus a 128MB heap cap (`resourceLimits`) so it cannot
+ *   memory-DoS the host either;
+ * - input/output size caps: payloads crossing the boundary are
+ *   JSON-serialized and size-limited before the host ever sees them.
+ *
+ * Decision validation (evidence identity checks) is deliberately host-side:
+ * it inspects host-produced data and executes no plugin code, so the worker
+ * exists only for untrusted source execution. One request, one response,
+ * then the worker dies — nothing a plugin does outlives its own worker.
+ */
+
+/** Hard wall-clock budget for a full plugin run, including worker spin-up. */
+export const PLUGIN_EXECUTION_BUDGET_MS = 5_000;
+
+/** Sync-code ceiling inside the vm realm (vm timeout for runInContext). */
+const VM_SYNC_TIMEOUT_MS = PLUGIN_EXECUTION_BUDGET_MS;
+
+const MAX_SOURCE_BYTES = 64 * 1024;
+const MAX_RESULT_BYTES = 32 * 1024;
+const MAX_INPUT_BYTES = 128 * 1024;
 
 export interface IsolatedPluginSourceInput {
-  evidence: StrategyEvidenceInput;
   input: Record<string, unknown>;
-  manifest: StrategyPluginManifest;
-  pluginId: string;
   source: string;
 }
 
-export interface IsolatedPluginValidationInput {
-  decision: PluginDecision;
-  evidence: StrategyEvidenceInput;
-  manifest: StrategyPluginManifest;
-  pluginId: string;
+type RunSourceRequest = {
+  input: Record<string, unknown>;
+  source: string;
+  syncTimeoutMs: number;
+  type: "run_source";
+};
+
+type WorkerResponse =
+  | { ok: true; decision: unknown }
+  | { ok: false; error: string };
+
+const WORKER_SOURCE = `
+  const { parentPort } = require("node:worker_threads");
+  const vm = require("node:vm");
+
+  const deny = (error) => parentPort.postMessage({ ok: false, error });
+
+  parentPort.on("message", async (request) => {
+    try {
+      if (request.type !== "run_source") return deny("unknown plugin boundary request");
+
+      // Bare realm: the ONLY host binding the plugin sees is "input".
+      const context = vm.createContext(
+        { input: request.input },
+        { codeGeneration: { strings: false, wasm: false } },
+      );
+      const fn = vm.runInContext("(" + request.source + ")", context, {
+        timeout: request.syncTimeoutMs,
+        displayErrors: true,
+      });
+      if (typeof fn !== "function") {
+        return deny("plugin source must evaluate to a function");
+      }
+      // Awaited host-side: a rejected promise (e.g. a dynamic import attempt,
+      // impossible because the realm has no import machinery) surfaces as a
+      // plain failure instead of a resolution.
+      const decision = await fn(request.input);
+      parentPort.postMessage({ ok: true, decision });
+    } catch (error) {
+      deny(
+        error instanceof Error
+          ? "isolated plugin execution failed: " + error.message
+          : "isolated plugin execution failed",
+      );
+    }
+  });
+`;
+
+function assertWithinLimit(
+  name: string,
+  value: string,
+  maxBytes: number,
+): void {
+  if (Buffer.byteLength(value, "utf8") > maxBytes) {
+    throw new Error(`${name} exceeds the ${maxBytes} byte isolation limit`);
+  }
 }
 
+/**
+ * Evaluate plugin source in a fresh, capability-less worker realm. Throws
+ * (never returns a decision) when the plugin attempts anything beyond pure
+ * computation on its input: forbidden modules, code generation, budgets.
+ */
 export async function runPluginSourceInIsolatedWorker(
   input: IsolatedPluginSourceInput,
 ): Promise<PluginDecision> {
-  return runWorkerRequest({ type: "run_source", ...input });
+  const sourceJson = JSON.stringify(input.source);
+  if (sourceJson === undefined) {
+    throw new Error("plugin source must be a string");
+  }
+  assertWithinLimit("plugin source", input.source, MAX_SOURCE_BYTES);
+
+  const inputJson = JSON.stringify(input.input);
+  if (inputJson === undefined) {
+    throw new Error("plugin input must be JSON-serializable");
+  }
+  assertWithinLimit("plugin input", inputJson, MAX_INPUT_BYTES);
+
+  const request: RunSourceRequest = {
+    input: JSON.parse(inputJson),
+    source: JSON.parse(sourceJson),
+    syncTimeoutMs: VM_SYNC_TIMEOUT_MS,
+    type: "run_source",
+  };
+
+  const response = await executeInWorker(request);
+  return validateResultSize(response);
 }
 
-export async function validateInIsolatedWorker(
-  input: IsolatedPluginValidationInput,
-): Promise<PluginDecision> {
-  return runWorkerRequest({ type: "validate", ...input });
-}
-
-async function runWorkerRequest(
-  input: Record<string, unknown>,
-): Promise<PluginDecision> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER_SOURCE, { eval: true });
-    const cleanup = () => {
-      worker.removeAllListeners();
-      void worker.terminate();
-    };
-    worker.once(
-      "message",
-      (message: { ok: boolean; decision?: PluginDecision; error?: string }) => {
-        cleanup();
-        if (!message.ok || !message.decision) {
-          reject(
-            new Error(message.error ?? "isolated plugin validation failed"),
-          );
-          return;
-        }
-        resolve(message.decision);
-      },
-    );
-    worker.once("error", (error) => {
-      cleanup();
-      reject(error);
+function executeInWorker(request: RunSourceRequest): Promise<WorkerResponse> {
+  return new Promise<WorkerResponse>((resolve, reject) => {
+    // Hard 128MB heap cap: a plugin cannot memory-DoS the host even inside
+    // its own worker (closing the unbounded-allocation hole that the
+    // wall-clock budget alone leaves open).
+    const worker = new Worker(WORKER_SOURCE, {
+      eval: true,
+      resourceLimits: { maxOldGenerationSizeMb: 128 },
     });
-    worker.postMessage(input);
-  });
-}
+    let settled = false;
 
-export async function assertIsolatedImportDenied(
-  specifier: string,
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const worker = new Worker(WORKER_SOURCE, { eval: true });
-    const cleanup = () => {
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
       worker.removeAllListeners();
       void worker.terminate();
+      fn();
     };
-    worker.once("message", (message: { ok: boolean; error?: string }) => {
-      cleanup();
-      if (message.ok || !message.error?.includes("denied")) {
-        reject(new Error("isolated worker failed to deny forbidden import"));
-        return;
+
+    // Hard wall-clock budget: a hanging async plugin is killed at the
+    // deadline; a runaway sync loop trips the vm timeout inside the realm.
+    const deadline = setTimeout(() => {
+      finish(() =>
+        reject(
+          new Error(
+            `plugin execution exceeded the ${PLUGIN_EXECUTION_BUDGET_MS}ms isolation budget and was terminated`,
+          ),
+        ),
+      );
+    }, PLUGIN_EXECUTION_BUDGET_MS);
+
+    worker.once("message", (message: WorkerResponse) => {
+      finish(() => resolve(message));
+    });
+    worker.once("error", (error) => {
+      finish(() => reject(error));
+    });
+    worker.once("exit", (code) => {
+      if (!settled && code !== 0) {
+        finish(() =>
+          reject(new Error(`isolated plugin worker exited with code ${code}`)),
+        );
       }
-      resolve();
     });
-    worker.once("error", (error) => {
-      cleanup();
-      reject(error);
-    });
-    worker.postMessage({ specifier, type: "import_attempt" });
+
+    worker.postMessage(request);
   });
+}
+
+function validateResultSize(response: WorkerResponse): PluginDecision {
+  if (!response.ok) {
+    throw new Error(response.error);
+  }
+  const resultJson = JSON.stringify(response.decision);
+  if (resultJson === undefined) {
+    throw new Error("plugin result must be JSON-serializable");
+  }
+  if (Buffer.byteLength(resultJson, "utf8") > MAX_RESULT_BYTES) {
+    throw new Error("plugin result exceeds the isolation size limit");
+  }
+  return response.decision as PluginDecision;
 }

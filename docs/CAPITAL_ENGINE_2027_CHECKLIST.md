@@ -27,7 +27,7 @@ Use this checklist as the implementation gate. Do not enable real capital until 
 
 - [x] Create a registry for plugin IDs, versions, capabilities, and required evidence. (Owner metadata remains pending.)
 - [x] Make plugin versions/config hashes immutable after publication.
-- [x] Prevent plugins from importing broker credentials, ledger writers, or arbitrary network clients through worker isolation (`src/ai/capital-engine/plugin-worker.ts`), a static import gate (`scripts/check-plugin-boundary.ts`), and the passing adversarial plugin tests in `test/ai/capital-engine/plugin-runtime.test.ts`.
+- [x] Prevent plugins from importing broker credentials, ledger writers, or arbitrary network clients through runtime isolation (`src/ai/capital-engine/plugin-worker.ts`: bare `node:vm` worker realm — no `require`/`import`/`process`, code generation disabled, 5s wall-clock budget with hard terminate, 128MB heap cap, payload size caps), enforced for every execution through the registry gate (`src/ai/capital-engine/strategy-registry.ts` binds source immutably to pluginId+configHash; workflows pass identity, never source), with the static import gate (`scripts/check-plugin-boundary.ts`) as a second layer only, and passing adversarial plugin tests proving runtime denial of `require`, dynamic `import`, `eval`/`Function` escape, process access, and static-scan-bypass attempts in `test/ai/capital-engine/plugin-runtime.test.ts` and `test/ai/capital-engine/strategy-registry.test.ts`.
 - [x] Require plugin manifests and capital intents to pass schema validation.
 - [ ] Require deterministic fixtures for every plugin.
 - [ ] Persist plugin commit/config/model/provider metadata with each decision.

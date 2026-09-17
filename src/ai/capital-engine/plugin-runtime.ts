@@ -7,10 +7,7 @@ import {
   type StrategyPluginManifest,
   validateStrategyPluginManifest,
 } from "./plugin";
-import {
-  runPluginSourceInIsolatedWorker,
-  validateInIsolatedWorker,
-} from "./plugin-worker";
+import { runPluginSourceInIsolatedWorker } from "./plugin-worker";
 
 export interface StrategyEvidenceInput {
   asset: string;
@@ -31,6 +28,11 @@ export const CONSENSUS_PLUGIN_MANIFEST: StrategyPluginManifest = {
   pluginVersion: "consensus-v1",
 };
 
+/**
+ * Run a registered plugin: source executes only in the isolated worker
+ * realm (see plugin-worker.ts), and the result must re-validate against
+ * the manifest/evidence identity host-side before it is trusted.
+ */
 export async function runIsolatedPluginSource(input: {
   evidence: StrategyEvidenceInput;
   input: Record<string, unknown>;
@@ -41,10 +43,7 @@ export async function runIsolatedPluginSource(input: {
   const manifest = validateStrategyPluginManifest(input.manifest);
   const decision = validateCapitalDecision(
     await runPluginSourceInIsolatedWorker({
-      evidence: input.evidence,
       input: input.input,
-      manifest,
-      pluginId: input.pluginId,
       source: input.source,
     }),
   );
@@ -58,19 +57,4 @@ export async function runIsolatedPluginSource(input: {
     throw new Error("plugin evidence identity mismatch");
   }
   return decision;
-}
-
-export async function runIsolatedStrategyPlugin(input: {
-  decision: PluginDecision;
-  evidence: StrategyEvidenceInput;
-  manifest: StrategyPluginManifest;
-  pluginId: string;
-}): Promise<PluginDecision> {
-  const manifest = validateStrategyPluginManifest(input.manifest);
-  return validateInIsolatedWorker({
-    decision: input.decision,
-    evidence: input.evidence,
-    manifest,
-    pluginId: input.pluginId,
-  });
 }

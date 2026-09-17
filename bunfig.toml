@@ -1,0 +1,6 @@
+# bun test preload: stub the "server-only" package so server modules
+# (db, broker, capital-engine) can be imported under bun test. In Next.js,
+# "server-only" throws when imported from a Client Component; under bun test
+# there is no client boundary, so the throw is pure friction.
+[test]
+preload = ["./scripts/test-preload.ts"]

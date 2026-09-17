@@ -12,8 +12,11 @@ import {
 import {
   CONSENSUS_PLUGIN_MANIFEST,
   CONSENSUS_PLUGIN_SOURCE,
-  runIsolatedPluginSource,
 } from "@/ai/capital-engine/plugin-runtime";
+import {
+  registerStrategyPluginSource,
+  runRegisteredStrategyPlugin,
+} from "@/ai/capital-engine/strategy-registry";
 import { registerStrategyPlugin } from "@/lib/promotion-records";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
 import { riskAgentConfig } from "../agents/config";
@@ -82,7 +85,15 @@ export async function runConsensusWorkflow(
   };
   await publishAgentEvent(proposal);
 
-  await registerStrategyPlugin(CONSENSUS_PLUGIN_MANIFEST);
+  // The workflow supplies plugin IDENTITY, never source: the registry
+  // resolves the immutable source bound to (pluginId, configHash) and runs
+  // it through the isolated worker realm. Persisting the manifest row via
+  // the DB-backed registerStrategyPlugin keeps promotion-lineage parity.
+  await registerStrategyPluginSource({
+    manifest: CONSENSUS_PLUGIN_MANIFEST,
+    onFirstRegister: (manifest) => registerStrategyPlugin(manifest),
+    source: CONSENSUS_PLUGIN_SOURCE,
+  });
 
   const decisionInputs = {
     consensus: {
@@ -115,7 +126,7 @@ export async function runConsensusWorkflow(
       signalFetchedAt: sentiment.fetchedAt,
       technicalsFetchedAt: technicals.fetchedAt,
     });
-    const isolatedNoTrade = await runIsolatedPluginSource({
+    const isolatedNoTrade = await runRegisteredStrategyPlugin({
       evidence: {
         asset: proposal.asset,
         signalFetchedAt: sentiment.fetchedAt,
@@ -124,8 +135,6 @@ export async function runConsensusWorkflow(
       },
       input: { candidate: noTrade },
       manifest: CONSENSUS_PLUGIN_MANIFEST,
-      pluginId: "consensus-v1",
-      source: CONSENSUS_PLUGIN_SOURCE,
     });
     await persistDecisionSnapshot({
       asset: proposal.asset,
@@ -161,7 +170,7 @@ export async function runConsensusWorkflow(
     signalFetchedAt: sentiment.fetchedAt,
     technicalsFetchedAt: technicals.fetchedAt,
   });
-  const isolatedIntent = await runIsolatedPluginSource({
+  const isolatedIntent = await runRegisteredStrategyPlugin({
     evidence: {
       asset: proposal.asset,
       signalFetchedAt: sentiment.fetchedAt,
@@ -170,8 +179,6 @@ export async function runConsensusWorkflow(
     },
     input: { candidate: intent },
     manifest: CONSENSUS_PLUGIN_MANIFEST,
-    pluginId: "consensus-v1",
-    source: CONSENSUS_PLUGIN_SOURCE,
   });
   const intentHash = hashCapitalIntent(isolatedIntent);
 
