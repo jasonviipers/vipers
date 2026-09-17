@@ -1,4 +1,6 @@
 import {
+  buildDecisionMetadata,
+  type DecisionMetadata,
   type DecisionSnapshot,
   persistDecisionSnapshot,
   snapshotInputsForSignal,
@@ -14,6 +16,7 @@ import {
   CONSENSUS_PLUGIN_MANIFEST,
   CONSENSUS_PLUGIN_SOURCE,
 } from "@/ai/capital-engine/plugin-runtime";
+import { isStrategyPluginEnabled } from "@/ai/capital-engine/strategy-lifecycle";
 import {
   registerStrategyPluginSource,
   runRegisteredStrategyPlugin,
@@ -50,9 +53,32 @@ export interface ConsensusWorkflowResult {
   };
 }
 
+/**
+ * The correlation basis for one workflow run: the plugin registry is
+ * process-local but decision metadata must be stable per run, so the
+ * correlation id is derived from the run's inputs (asset + source + time),
+ * not from a plugin that may be re-registered.
+ */
+function proposalIdBasis(input: ConsensusWorkflowInput): string {
+  return `wf:${input.asset}:${input.source}`;
+}
+
 export async function runConsensusWorkflow(
   input: ConsensusWorkflowInput,
 ): Promise<ConsensusWorkflowResult> {
+  // Pre-run check: a disabled plugin halts the pipeline BEFORE any spend.
+  // Fail-safe: an unknown/missing row reads as disabled. This is the
+  // enforcement point for strategy disable/rollback (strategy-lifecycle.ts).
+  if (!(await isStrategyPluginEnabled(CONSENSUS_PLUGIN_MANIFEST.pluginId))) {
+    return {
+      order: {
+        asset: input.asset,
+        orderId: "",
+        status: "BLOCKED",
+      },
+    };
+  }
+
   const sentiment = await fetchMarketSignals(input.asset);
   const signal: SignalCreated = {
     asset: input.asset,
@@ -72,6 +98,24 @@ export async function runConsensusWorkflow(
   if (!parsed) {
     return { order: { asset: "", orderId: "", status: "BLOCKED" } };
   }
+
+  // Decision metadata: WHICH plugin decided (identity from the registry
+  // manifest), WHICH model/provider actually produced the reasoning, and
+  // WHICH operator settings were in force. Built once per run and stamped
+  // onto every persist site (NO_TRADE, quorum block, risk block, order).
+  const metadata: DecisionMetadata = await buildDecisionMetadata({
+    correlationId: proposalIdBasis(input),
+    dataTimestamps: [sentiment.fetchedAt, technicals.fetchedAt],
+    modelInfo: {
+      modelId: reasoning.resolvedModelId,
+      provider: reasoning.provider,
+    },
+    plugin: {
+      configHash: CONSENSUS_PLUGIN_MANIFEST.configHash,
+      id: CONSENSUS_PLUGIN_MANIFEST.pluginId,
+      version: CONSENSUS_PLUGIN_MANIFEST.pluginVersion,
+    },
+  });
 
   const proposal: AnalysisProposed = {
     agentId: "reasoning-analysis-agent",
@@ -144,6 +188,7 @@ export async function runConsensusWorkflow(
       asset: proposal.asset,
       inputs: decisionInputs,
       intentHash: hashCapitalIntent(isolatedNoTrade),
+      metadata,
       outcome: {
         blocked: true,
         order: null,
@@ -211,6 +256,7 @@ export async function runConsensusWorkflow(
         },
       },
       intentHash,
+      metadata,
       outcome: {
         blocked: true,
         order: null,
@@ -270,6 +316,7 @@ export async function runConsensusWorkflow(
         technicals: snapshotInputsForTechnicals(technicals),
       },
       intentHash,
+      metadata,
       outcome: {
         blocked: true,
         order: null,
@@ -348,6 +395,7 @@ export async function runConsensusWorkflow(
       },
     },
     intentHash,
+    metadata,
     proposalId: proposal.proposalId,
     signalId: signal.signalId,
   };

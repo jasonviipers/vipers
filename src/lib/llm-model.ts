@@ -3,7 +3,10 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
+import { eq } from "drizzle-orm";
 
+import { db } from "@/db";
+import { agentLlmConfigs } from "@/db/schema/trading";
 import { log } from "@/lib/evlog";
 import { getLlmApiKey, type LlmProviderId } from "@/lib/llm-credentials";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
@@ -48,13 +51,7 @@ export async function getActiveProvider(): Promise<LlmProviderId> {
   let value: LlmProviderId = FALLBACK_PROVIDER;
   try {
     const settings = await getRuntimeSettings();
-    if (
-      settings.defaultLlmProvider === "OPENAI" ||
-      settings.defaultLlmProvider === "ANTHROPIC" ||
-      settings.defaultLlmProvider === "GOOGLE" ||
-      settings.defaultLlmProvider === "XAI" ||
-      settings.defaultLlmProvider === "DEEPSEEK"
-    ) {
+    if (isValidProvider(settings.defaultLlmProvider)) {
       value = settings.defaultLlmProvider;
     }
   } catch {
@@ -64,9 +61,59 @@ export async function getActiveProvider(): Promise<LlmProviderId> {
   return value;
 }
 
+function isValidProvider(value: string): value is LlmProviderId {
+  return (
+    value === "OPENAI" ||
+    value === "ANTHROPIC" ||
+    value === "GOOGLE" ||
+    value === "XAI" ||
+    value === "DEEPSEEK"
+  );
+}
+
 /** Invalidate the provider cache after a settings write. */
 export function invalidateActiveProviderCache(): void {
   cachedProvider = null;
+  agentProviderCache.clear();
+}
+
+const agentProviderCache = new Map<
+  string,
+  { value: LlmProviderId | null; expiresAt: number }
+>();
+
+/**
+ * Resolve the provider for a specific fleet agent. A per-agent override
+ * (agent_llm_configs row, set in /settings) wins; otherwise the agent
+ * inherits the operator's DEFAULT LLM PROVIDER. Null rows never override —
+ * the fleet default still applies. A missing or corrupt DB falls back to
+ * the fleet default, so a config read failure never breaks an agent call.
+ */
+export async function getProviderForAgent(
+  agentId: string,
+): Promise<LlmProviderId | null> {
+  const cached = agentProviderCache.get(agentId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+  let value: LlmProviderId | null = null;
+  try {
+    const [row] = await db
+      .select({ provider: agentLlmConfigs.provider })
+      .from(agentLlmConfigs)
+      .where(eq(agentLlmConfigs.agentId, agentId))
+      .limit(1);
+    if (row && isValidProvider(row.provider)) {
+      value = row.provider;
+    }
+  } catch {
+    // DB unreachable — fall through to the fleet default.
+  }
+  agentProviderCache.set(agentId, {
+    expiresAt: Date.now() + PROVIDER_TTL_MS,
+    value,
+  });
+  return value;
 }
 
 /**
@@ -102,11 +149,40 @@ function createLanguageModel(provider: LlmProviderId, apiKey: string) {
  * resort is the Google env key, matching pre-refactor behavior.
  */
 export async function resolveActiveModel() {
-  const active = await getActiveProvider();
+  const { model } = await resolveActiveModelInfo();
+  return model;
+}
+
+export interface ActiveModelInfo {
+  /** Non-null: resolveActiveModelInfo throws when no provider can resolve. */
+  model: NonNullable<Awaited<ReturnType<typeof buildModelForProvider>>>;
+  /** Which provider the resolved model actually runs on. */
+  provider: LlmProviderId;
+  /** True when the active provider had no key and the fallback was used. */
+  usedFallback: boolean;
+}
+
+/**
+ * Same resolution chain as resolveActiveModel, but also reports WHICH
+ * provider the model actually runs on and the configured model id — the
+ * metadata decision records need (a silent fallback must not be recorded
+ * as the operator's chosen provider).
+ *
+ * Pass `agentId` to respect a per-agent provider override (set in
+ * /settings → AGENT CONFIGURATION); omitted, the fleet-wide default –
+ * operator's DEFAULT LLM PROVIDER – applies, preserving callers that
+ * resolve tooling models rather than an agent's.
+ */
+export async function resolveActiveModelInfo(
+  agentId?: string,
+): Promise<ActiveModelInfo> {
+  const active = agentId
+    ? ((await getProviderForAgent(agentId)) ?? (await getActiveProvider()))
+    : await getActiveProvider();
 
   const preferred = await buildModelForProvider(active);
   if (preferred) {
-    return preferred;
+    return { model: preferred, provider: active, usedFallback: false };
   }
 
   const fallback = await buildModelForProvider(FALLBACK_PROVIDER);
@@ -115,7 +191,11 @@ export async function resolveActiveModel() {
       activeProvider: active,
       message: "active LLM provider has no key — fell back to GOOGLE",
     });
-    return fallback;
+    return {
+      model: fallback,
+      provider: FALLBACK_PROVIDER,
+      usedFallback: true,
+    };
   }
 
   throw new Error(

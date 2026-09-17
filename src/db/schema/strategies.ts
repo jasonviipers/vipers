@@ -9,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { signalSourceEnum } from "./signals";
@@ -62,9 +63,24 @@ export const strategyPromotions = pgTable(
       .references(() => strategyPlugins.pluginId),
     pluginVersion: text("plugin_version").notNull(),
     policyHash: text("policy_hash").notNull(),
+    /**
+     * Per-plugin monotonic sequence. All writes go through
+     * appendPromotionRecord, which computes head.seq + 1 — the UNIQUE
+     * (plugin_id, seq) index makes a concurrent double-append impossible
+     * at the DB layer: both replicas compute the same next seq, one
+     * insert wins, the loser gets a unique violation it maps to a
+     * stale-lineage refusal. Repeated stages are legal (each lifecycle
+     * cycle appends HALTED/DRAFT), so the constraint is on ORDER, not
+     * on stage values.
+     */
+    seq: integer("seq").notNull(),
     stage: strategyPluginStageEnum("stage").notNull(),
   },
   (t) => ({
+    pluginSeqUnique: uniqueIndex("strategy_promotions_plugin_seq_uidx").on(
+      t.pluginId,
+      t.seq,
+    ),
     pluginStageIdx: index("strategy_promotions_plugin_stage_idx").on(
       t.pluginId,
       t.stage,

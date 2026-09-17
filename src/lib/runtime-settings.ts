@@ -140,3 +140,16 @@ export async function updateRuntimeSettings(
 
   return next;
 }
+
+/**
+ * Canonical sha256 over the effective runtime settings — the
+ * settingsHash stamped into decision metadata, so an audit can show which
+ * operator controls (quorum, loss caps, provider, …) were in force when a
+ * decision was made.
+ */
+export async function hashRuntimeSettings(): Promise<string> {
+  const { createHash } = await import("node:crypto");
+  const { canonicalise } = await import("@/ai/capital-engine/canonical-json");
+  const settings = await getRuntimeSettings();
+  return createHash("sha256").update(canonicalise(settings)).digest("hex");
+}

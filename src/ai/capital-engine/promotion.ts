@@ -22,10 +22,23 @@ const ALLOWED_TRANSITIONS: Record<PromotionStage, readonly PromotionStage[]> = {
   HALTED: ["DRAFT"],
 };
 
+export interface PromotionMetrics {
+  /** Win rate 0-1 over the evaluation window. */
+  winRate: number;
+  /** Realized PnL in account currency over the evaluation window. */
+  pnl: number;
+  /** Maximum peak-to-trough drawdown percent over the window. */
+  maxDrawdownPct: number;
+  /** Evaluation window length in days. */
+  evaluationDays: number;
+}
+
 export interface PromotionRecord {
   configHash: string;
   dataSnapshotIds: string[];
   evaluatedAt: string;
+  /** Evaluation metrics for the stage being recorded (null when none). */
+  metrics: PromotionMetrics | null;
   pluginId: string;
   pluginVersion: string;
   policyHash: string;
@@ -62,6 +75,22 @@ export function advancePromotion(
   ) {
     throw new Error(
       "Promotion record is missing immutable evaluation metadata",
+    );
+  }
+  // A stage whose whole point is evaluation evidence must carry that
+  // evidence: metrics are REQUIRED for advancement past DRAFT, backtest
+  // metrics past BACKTEST, and walk-forward metrics past WALK_FORWARD.
+  if (
+    (record.stage === "BACKTEST" ||
+      record.stage === "WALK_FORWARD" ||
+      record.stage === "SHADOW" ||
+      record.stage === "PAPER" ||
+      record.stage === "CANARY" ||
+      record.stage === "LIVE") &&
+    !record.metrics
+  ) {
+    throw new Error(
+      `Promotion record at stage ${record.stage} is missing evaluation metrics`,
     );
   }
   return {

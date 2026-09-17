@@ -10,20 +10,25 @@ import { registerStrategyPluginSource } from "@/ai/capital-engine/strategy-regis
 /**
  * Promotion gate: no plugin advances a promotion stage without its
  * deterministic fixtures re-proving determinism in the isolated runtime,
- * with the record's version bound to the registered manifest version.
+ * the record's version bound to the registered manifest version, and the
+ * submitted record being the plugin's CURRENT lineage head.
  */
 
 const manifest = CONSENSUS_PLUGIN_MANIFEST;
 
-function recordFor(stage: PromotionRecord["stage"]): PromotionRecord {
+function recordFor(manifestForRecord: {
+  configHash: string;
+  pluginId: string;
+  pluginVersion: string;
+}): PromotionRecord {
   return {
-    configHash: manifest.configHash,
+    configHash: manifestForRecord.configHash,
     dataSnapshotIds: ["data-snapshot-1"],
     evaluatedAt: new Date().toISOString(),
-    pluginId: manifest.pluginId,
-    pluginVersion: manifest.pluginVersion,
+    pluginId: manifestForRecord.pluginId,
+    pluginVersion: manifestForRecord.pluginVersion,
     policyHash: "p".repeat(64),
-    stage,
+    stage: "DRAFT",
   };
 }
 
@@ -71,24 +76,29 @@ async function registerTestPlugin() {
 }
 
 describe("promotion gate", () => {
+  /** Lineage reader backed by an in-memory head (mutate to simulate races). */
+  function makeLineage() {
+    const heads = new Map<string, PromotionRecord>();
+    return {
+      head: (pluginId: string) => Promise.resolve(heads.get(pluginId) ?? null),
+      seed: (record: PromotionRecord) => heads.set(record.pluginId, record),
+    };
+  }
+
   it("advances a verified plugin and appends the record with verified identity", async () => {
     const testManifest = await registerTestPlugin();
+    const lineage = makeLineage();
     const persisted: PromotionRecord[] = [];
-    const record: PromotionRecord = {
-      configHash: testManifest.configHash,
-      dataSnapshotIds: ["data-snapshot-1"],
-      evaluatedAt: new Date().toISOString(),
-      pluginId: testManifest.pluginId,
-      pluginVersion: testManifest.pluginVersion,
-      policyHash: "p".repeat(64),
-      stage: "DRAFT",
-    };
+    const record = recordFor(testManifest);
+    lineage.seed(record);
 
     const result = await advancePromotionGate({
       manifest: testManifest,
       persistRecord: async (r) => {
         persisted.push(r);
+        lineage.seed(r); // simulate the DB head moving on append
       },
+      readLatestRecord: lineage.head,
       record,
       toStage: "BACKTEST",
     });
@@ -101,6 +111,64 @@ describe("promotion gate", () => {
     expect(result.advanced.pluginVersion).toBe(testManifest.pluginVersion);
   });
 
+  it("refuses to advance a record that is no longer the lineage head", async () => {
+    const testManifest = await registerTestPlugin();
+    const lineage = makeLineage();
+    const staleRecord = recordFor(testManifest);
+    lineage.seed({ ...staleRecord, stage: "BACKTEST" }); // someone else advanced
+
+    await expect(
+      advancePromotionGate({
+        manifest: testManifest,
+        persistRecord: async () => {},
+        readLatestRecord: lineage.head,
+        record: staleRecord,
+        toStage: "BACKTEST",
+      }),
+    ).rejects.toThrow("stale promotion record");
+  });
+
+  it("refuses a plugin with no promotion lineage at all", async () => {
+    const testManifest = await registerTestPlugin();
+    await expect(
+      advancePromotionGate({
+        manifest: testManifest,
+        persistRecord: async () => {},
+        readLatestRecord: () => Promise.resolve(null),
+        record: recordFor(testManifest),
+        toStage: "BACKTEST",
+      }),
+    ).rejects.toThrow("no promotion lineage");
+  });
+
+  it("refuses two concurrent advances of the same plugin past the head", async () => {
+    const testManifest = await registerTestPlugin();
+    const lineage = makeLineage();
+    const record = recordFor(testManifest);
+    lineage.seed(record);
+
+    // Both operators read the same DRAFT head; the first advance moves the
+    // head before the second's gate check runs.
+    const first = advancePromotionGate({
+      manifest: testManifest,
+      persistRecord: async (r) => {
+        lineage.seed(r);
+      },
+      readLatestRecord: lineage.head,
+      record,
+      toStage: "BACKTEST",
+    });
+    const second = advancePromotionGate({
+      manifest: testManifest,
+      persistRecord: async () => {},
+      readLatestRecord: lineage.head,
+      record,
+      toStage: "BACKTEST",
+    });
+    await expect(first).resolves.toBeTruthy();
+    await expect(second).rejects.toThrow("stale promotion record");
+  });
+
   it("refuses to advance a plugin that is not registered", async () => {
     await expect(
       advancePromotionGate({
@@ -110,8 +178,9 @@ describe("promotion gate", () => {
           pluginId: "ghost-v1",
         },
         persistRecord: async () => {},
+        readLatestRecord: () => Promise.resolve(null),
         record: {
-          ...recordFor("DRAFT"),
+          ...recordFor(manifest),
           pluginId: "ghost-v1",
         },
         toStage: "BACKTEST",
@@ -125,10 +194,9 @@ describe("promotion gate", () => {
       advancePromotionGate({
         manifest: testManifest,
         persistRecord: async () => {},
+        readLatestRecord: () => Promise.resolve(null),
         record: {
-          ...recordFor("DRAFT"),
-          configHash: testManifest.configHash,
-          pluginId: testManifest.pluginId,
+          ...recordFor(testManifest),
           pluginVersion: "other-version",
         },
         toStage: "BACKTEST",
@@ -138,20 +206,16 @@ describe("promotion gate", () => {
 
   it("refuses an illegal stage transition even with clean fixtures", async () => {
     const testManifest = await registerTestPlugin();
+    const lineage = makeLineage();
     // DRAFT -> LIVE skips every stage; fixtures pass but policy refuses.
+    const record = recordFor(testManifest);
+    lineage.seed(record);
     await expect(
       advancePromotionGate({
         manifest: testManifest,
         persistRecord: async () => {},
-        record: {
-          configHash: testManifest.configHash,
-          dataSnapshotIds: ["data-snapshot-1"],
-          evaluatedAt: new Date().toISOString(),
-          pluginId: testManifest.pluginId,
-          pluginVersion: testManifest.pluginVersion,
-          policyHash: "p".repeat(64),
-          stage: "DRAFT",
-        },
+        readLatestRecord: lineage.head,
+        record,
         toStage: "LIVE",
       }),
     ).rejects.toThrow("Invalid promotion transition");
@@ -159,19 +223,23 @@ describe("promotion gate", () => {
 
   it("refuses a record with incomplete evaluation metadata", async () => {
     const testManifest = await registerTestPlugin();
+    const lineage = makeLineage();
+    const record: PromotionRecord = {
+      configHash: testManifest.configHash,
+      dataSnapshotIds: [],
+      evaluatedAt: new Date().toISOString(),
+      pluginId: testManifest.pluginId,
+      pluginVersion: testManifest.pluginVersion,
+      policyHash: "p".repeat(64),
+      stage: "DRAFT",
+    };
+    lineage.seed(record);
     await expect(
       advancePromotionGate({
         manifest: testManifest,
         persistRecord: async () => {},
-        record: {
-          configHash: testManifest.configHash,
-          dataSnapshotIds: [],
-          evaluatedAt: new Date().toISOString(),
-          pluginId: testManifest.pluginId,
-          pluginVersion: testManifest.pluginVersion,
-          policyHash: "p".repeat(64),
-          stage: "DRAFT",
-        },
+        readLatestRecord: lineage.head,
+        record,
         toStage: "BACKTEST",
       }),
     ).rejects.toThrow("missing immutable evaluation metadata");
@@ -179,7 +247,7 @@ describe("promotion gate", () => {
 
   it("keeps advancePromotion semantics intact for the gate path", () => {
     // Direct-policy regression guard: the gate delegates, not re-implements.
-    const record = recordFor("DRAFT");
+    const record = recordFor(manifest);
     expect(advancePromotion(record, "BACKTEST").stage).toBe("BACKTEST");
     expect(() => advancePromotion(record, "LIVE")).toThrow(
       "Invalid promotion transition",

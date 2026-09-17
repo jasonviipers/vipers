@@ -67,6 +67,9 @@ export interface DecisionMetadata {
   correlationId: string;
   dataTimestamps: number[];
   model?: string;
+  /** Content hash of the deciding plugin — null for the built-in consensus plugin. */
+  pluginConfigHash: string | null;
+  pluginId: string;
   pluginVersion: string;
   policyVersion: string;
   provider?: string;
@@ -99,6 +102,47 @@ export interface DecisionSnapshot {
   outcome: DecisionOutcome;
   proposalId: string;
   signalId: string;
+}
+
+/**
+ * Build the decision metadata stamped into the immutable snapshot and the
+ * append-only ledger: WHICH plugin decided (id + version + config hash),
+ * WHICH policy governed it, WHICH model/provider produced the reasoning
+ * (resolved through the same fallback chain the agent call uses, so a
+ * silent provider fallback is recorded as what actually ran), and the
+ * server-owned settings snapshot the decision ran under.
+ *
+ * This is the “persist plugin commit/config/model/provider metadata with
+ * each decision” surface: pluginId + pluginVersion + pluginConfigHash
+ * pin the exact deciding artifact, model + provider pin the reasoning
+ * source, settingsHash pins the operator controls in force.
+ */
+export async function buildDecisionMetadata(input: {
+  correlationId: string;
+  dataTimestamps: number[];
+  /** Resolved via resolveActiveModelInfo() alongside the agent call. */
+  modelInfo: { modelId: string; provider: string };
+  plugin: { configHash: string | null; id: string; version: string };
+}): Promise<DecisionMetadata> {
+  let settingsHash: string | undefined;
+  try {
+    const { hashRuntimeSettings } = await import("@/lib/runtime-settings");
+    settingsHash = await hashRuntimeSettings();
+  } catch {
+    // Settings unavailable — metadata stays honest by omitting the hash
+    // rather than recording a placeholder.
+  }
+  return {
+    correlationId: input.correlationId,
+    dataTimestamps: input.dataTimestamps,
+    model: input.modelInfo.modelId,
+    pluginConfigHash: input.plugin.configHash,
+    pluginId: input.plugin.id,
+    pluginVersion: input.plugin.version,
+    policyVersion: "risk-v1",
+    provider: input.modelInfo.provider,
+    settingsHash,
+  };
 }
 
 export function snapshotInputsForSignal(
@@ -185,6 +229,8 @@ export async function persistDecisionSnapshot(
       snapshot.inputs.signal.fetchedAt,
       snapshot.inputs.technicals.fetchedAt,
     ],
+    pluginConfigHash: null,
+    pluginId: "consensus-v1",
     pluginVersion: "consensus-v1",
     policyVersion: "risk-v1",
   };

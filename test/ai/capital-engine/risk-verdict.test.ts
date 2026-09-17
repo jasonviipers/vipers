@@ -66,6 +66,8 @@ describe("risk verdict and decision replay", () => {
       metadata: {
         correlationId: "proposal",
         dataTimestamps: [1, 2],
+        pluginConfigHash: null,
+        pluginId: "consensus-v1",
         pluginVersion: "consensus-v1",
         policyVersion: "risk-v1",
       },

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { generateText, type ToolSet } from "ai";
 
-import { resolveActiveModel } from "@/lib/llm-model";
+import { resolveActiveModelInfo } from "@/lib/llm-model";
 import { recordLlmUsage } from "@/lib/llm-usage";
 import {
   analyzeTechnicalsTool,
@@ -25,6 +25,10 @@ import {
 
 export interface AgentGenerateResult {
   text: string;
+  /** Which provider the generation actually ran on. */
+  provider: string;
+  /** The model id the provider reported ("unknown" when unavailable). */
+  resolvedModelId: string;
 }
 
 export class TradingAgent {
@@ -36,8 +40,13 @@ export class TradingAgent {
 
   async generate(prompt: string): Promise<AgentGenerateResult> {
     const correlationId = randomUUID();
+    // Resolved through the same fallback chain the call uses, so metadata
+    // records the provider that ACTUALLY ran, not the one configured. The
+    // agent id is passed through so a per-agent provider override (set in
+    // /settings → AGENT CONFIGURATION) pins this agent to its own model.
+    const { model, provider } = await resolveActiveModelInfo(this.id);
     const result = await generateText({
-      model: await resolveActiveModel(),
+      model,
       instructions: this.instructions,
       prompt,
       tools: this.tools,
@@ -45,19 +54,20 @@ export class TradingAgent {
       timeout: { totalMs: 45_000 },
     });
 
+    const resolvedModelId = result.response?.modelId ?? "unknown";
     const usage = result.usage;
     if (usage) {
       recordLlmUsage({
         agentId: this.id,
         correlationId,
         inputTokens: usage.inputTokens ?? 0,
-        model: result.response?.modelId ?? "unknown",
+        model: resolvedModelId,
         outputTokens: usage.outputTokens ?? 0,
         totalTokens: usage.totalTokens ?? 0,
       });
     }
 
-    return { text: result.text };
+    return { provider, resolvedModelId, text: result.text };
   }
 }
 
