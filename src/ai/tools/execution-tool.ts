@@ -3,9 +3,12 @@
  * Emits the order lifecycle result; retries and reconciliation stay inside
  * the execution team's responsibility.
  *
- * When OKX credentials are configured, orders route through the live
- * `src/channels` broker adapter. Otherwise an explicitly configured paper
- * book is used; missing paper capital fails closed so no synthetic balance
+ * Orders route through the ACTIVE broker (a durable runtime setting) via
+ * resolveActiveBrokerRoute():
+ *   - OKX: demo creds → local paper book, live creds → OKX live API.
+ *   - Alpaca: demo creds → Alpaca PAPER API, live creds → Alpaca live API.
+ * An unconfigured active broker falls back to the explicitly configured
+ * paper book; missing paper capital fails closed so no synthetic balance
  * reaches an execution result.
  *
  * Persistence + idempotency: every outcome is recorded in the `orders`
@@ -15,19 +18,16 @@
  * replaces the old in-memory Map, which did not survive restarts.
  */
 
-import { resolveExecutionRoute } from "@/ai/capital-engine/execution-mode";
 import {
   type CapitalIntent,
   hashCapitalIntent,
 } from "@/ai/capital-engine/intent";
 import { env } from "@/env";
-import { getBrokerCredentials } from "@/lib/broker-credentials";
 import { log } from "@/lib/evlog";
 
-import {
-  placeProtectiveReduction as brokerPlaceProtectiveReduction,
-  placeMarketOrder,
-} from "../broker/okx-broker";
+import { placeMarketOrder as alpacaPlaceMarketOrder } from "../broker/alpaca-broker";
+import { resolveActiveBrokerRoute } from "../broker/broker-router";
+import { placeMarketOrder as okxPlaceMarketOrder } from "../broker/okx-broker";
 import {
   recordOrderOutcome,
   reserveOrderSubmission,
@@ -84,7 +84,7 @@ function paperResult(request: OrderRequest): OrderResult {
       };
 }
 
-export function validateExecutionIntent(request: OrderRequest): boolean {
+function validateExecutionIntent(request: OrderRequest): boolean {
   return Boolean(
     request.intent &&
       request.intentHash &&
@@ -93,79 +93,6 @@ export function validateExecutionIntent(request: OrderRequest): boolean {
       request.intent.direction === request.direction &&
       hashCapitalIntent(request.intent) === request.intentHash,
   );
-}
-
-/**
- * Submit an approved protective reduction through the dedicated broker path.
- * This intentionally does not accept a new-risk CapitalIntent: callers must
- * provide the risk kernel's explicit protective approval and position ID.
- */
-export async function executeProtectiveReduction(request: {
-  approved: boolean;
-  asset: string;
-  currentDirection: "LONG" | "SHORT";
-  positionId: string;
-  positionSizePct: number;
-}): Promise<OrderResult> {
-  if (!request.approved) {
-    return {
-      detail: "Protective reduction blocked: risk approval is required",
-      orderId: `protective_${request.positionId}:o0`,
-      quantity: 0,
-      status: "FAILED",
-    };
-  }
-  if (!(request.positionSizePct > 0 && request.positionSizePct <= 100)) {
-    return {
-      detail: "Protective reduction blocked: invalid reduction size",
-      orderId: `protective_${request.positionId}:o0`,
-      quantity: 0,
-      status: "FAILED",
-    };
-  }
-
-  const credentials = await getBrokerCredentials("okx");
-  if (!credentials && process.env.NODE_ENV === "production") {
-    return {
-      detail:
-        "Protective reduction blocked: production broker is not configured",
-      orderId: `protective_${request.positionId}:o0`,
-      quantity: 0,
-      status: "FAILED",
-    };
-  }
-
-  try {
-    const result = credentials
-      ? await brokerPlaceProtectiveReduction(
-          request.asset,
-          request.currentDirection,
-          request.positionSizePct,
-          request.positionId,
-        )
-      : {
-          detail:
-            "Protective reduction requires a configured paper position book",
-          orderId: `protective_${request.positionId}:o0`,
-          quantity: 0,
-          status: "FAILED" as const,
-        };
-    return {
-      detail: result.detail,
-      entryPrice: result.entryPrice,
-      orderId: result.orderId,
-      quantity: result.quantity,
-      status: result.status,
-    };
-  } catch (error) {
-    return {
-      detail:
-        error instanceof Error ? error.message : "protective reduction failed",
-      orderId: `protective_${request.positionId}:o0`,
-      quantity: 0,
-      status: "FAILED",
-    };
-  }
 }
 
 export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
@@ -180,12 +107,10 @@ export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
   }
 
   let result: OrderResult;
-  const credentials = await getBrokerCredentials("okx");
-  const route = resolveExecutionRoute({
-    credentialMode: credentials?.mode ?? null,
+  const route = await resolveActiveBrokerRoute({
     nodeEnvironment: env.NODE_ENV,
   });
-  if (route === "blocked") {
+  if (route.status === "blocked") {
     return {
       detail:
         "Order blocked: production requires explicitly configured demo or live broker credentials",
@@ -194,10 +119,10 @@ export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
       status: "FAILED",
     };
   }
-  const mode: "live" | "paper" = route;
+  const { brokerId, mode } = route;
 
   try {
-    const reservation = await reserveOrderSubmission(request, mode);
+    const reservation = await reserveOrderSubmission(request, mode, brokerId);
     if (reservation.duplicate) {
       return (
         reservation.result ?? {
@@ -223,7 +148,10 @@ export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
   }
 
   try {
-    result = route === "live" ? await liveOrder(request) : paperResult(request);
+    result =
+      route.executionRoute === "live"
+        ? await liveOrder(request, brokerId)
+        : paperResult(request);
   } catch (error) {
     // The adapter normally converts errors to FAILED, but a throw here
     // (e.g. persistence/agent resolution) must still be recorded loudly.
@@ -237,12 +165,12 @@ export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
   }
 
   try {
-    const persisted = await recordOrderOutcome(request, result, mode);
+    const persisted = await recordOrderOutcome(request, result, mode, brokerId);
     return persisted.result;
   } catch (error) {
     // Persistence failure must not fabricate a success — surface the
     // failure; the deterministic clOrdId keeps an accidental re-send of
-    // the same proposal on the same OKX order (live mode).
+    // the same proposal on the same exchange order.
     log.error(
       error instanceof Error
         ? error
@@ -257,13 +185,24 @@ export async function placeOrder(request: OrderRequest): Promise<OrderResult> {
   }
 }
 
-async function liveOrder(request: OrderRequest): Promise<OrderResult> {
-  const brokerResult = await placeMarketOrder(
-    request.asset,
-    request.direction,
-    request.positionSizePct,
-    request.proposalId,
-  );
+async function liveOrder(
+  request: OrderRequest,
+  brokerId: "okx" | "alpaca",
+): Promise<OrderResult> {
+  const brokerResult =
+    brokerId === "alpaca"
+      ? await alpacaPlaceMarketOrder(
+          request.asset,
+          request.direction,
+          request.positionSizePct,
+          request.proposalId,
+        )
+      : await okxPlaceMarketOrder(
+          request.asset,
+          request.direction,
+          request.positionSizePct,
+          request.proposalId,
+        );
   return {
     detail: brokerResult.detail,
     entryPrice: brokerResult.entryPrice,

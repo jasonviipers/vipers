@@ -41,33 +41,34 @@ export const GET = withEvlog(async () => {
 
   try {
     const dbAgents = await db.select().from(agents);
-    for (const row of dbAgents) {
-      const [stats] = await db
-        .select()
-        .from(agentStats)
-        .where(eq(agentStats.agentId, row.id));
-      const snapshots = await db
-        .select({ value: equitySnapshots.value })
-        .from(equitySnapshots)
-        .where(eq(equitySnapshots.agentId, row.id))
-        .orderBy(equitySnapshots.recordedAt)
-        .limit(30);
+    await Promise.all(
+      dbAgents.map(async (row) => {
+        const [[stats], snapshots] = await Promise.all([
+          db.select().from(agentStats).where(eq(agentStats.agentId, row.id)),
+          db
+            .select({ value: equitySnapshots.value })
+            .from(equitySnapshots)
+            .where(eq(equitySnapshots.agentId, row.id))
+            .orderBy(equitySnapshots.recordedAt)
+            .limit(30),
+        ]);
 
-      flavor.set(row.id, {
-        equity: snapshots.map((s) => Number(s.value)),
-        maxDrawdown: Number(stats?.maxDrawdown ?? 0),
-        pnl: Number(stats?.pnl ?? 0),
-        roi: Number(stats?.roi ?? 0),
-        score: stats?.score != null ? Number(stats.score) : null,
-        scoreComputedAt: stats?.scoreComputedAt
-          ? stats.scoreComputedAt.toISOString()
-          : null,
-        sharpe: Number(stats?.sharpe ?? 0),
-        status: row.status,
-        trades: stats?.trades ?? 0,
-        winRate: Number(stats?.winRate ?? 0),
-      });
-    }
+        flavor.set(row.id, {
+          equity: snapshots.map((s) => Number(s.value)),
+          maxDrawdown: Number(stats?.maxDrawdown ?? 0),
+          pnl: Number(stats?.pnl ?? 0),
+          roi: Number(stats?.roi ?? 0),
+          score: stats?.score != null ? Number(stats.score) : null,
+          scoreComputedAt: stats?.scoreComputedAt
+            ? stats.scoreComputedAt.toISOString()
+            : null,
+          sharpe: Number(stats?.sharpe ?? 0),
+          status: row.status,
+          trades: stats?.trades ?? 0,
+          winRate: Number(stats?.winRate ?? 0),
+        });
+      }),
+    );
   } catch (error) {
     logger.set({
       warning: `agent db unavailable, serving catalog: ${

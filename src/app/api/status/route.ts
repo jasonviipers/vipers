@@ -1,12 +1,14 @@
 import { and, count, eq, gte, sql } from "drizzle-orm";
 
+import { isKnownBroker } from "@/channels/broker/registry";
 import { db } from "@/db";
 import { agents } from "@/db/schema/agent";
 import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
 import { positions } from "@/db/schema/trading";
 import { getBrokerCredentials } from "@/lib/broker-credentials";
-import { useLogger, withEvlog } from "@/lib/evlog";
+import { getLogger, withEvlog } from "@/lib/evlog";
 import { llmUsageSummary } from "@/lib/llm-usage";
+import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +29,7 @@ function startOfLocalDay(daysAgo = 0): Date {
  * instead of failing the whole payload.
  */
 export const GET = withEvlog(async () => {
-  const logger = useLogger();
+  const logger = getLogger();
   logger.set({ integration: "status" });
 
   let agentTotal = 0;
@@ -126,20 +128,37 @@ export const GET = withEvlog(async () => {
     });
   }
 
-  // Mirrors the execution tool's routing rule: stored OKX credentials
-  // (UI-managed, encrypted) -> live broker (demo flag shown), otherwise
-  // the paper-book stub.
-  let broker: { shortName: string; status: "connected" | "paper" } = {
+  // Mirrors the execution tool's routing rule: the ACTIVE broker with
+  // stored credentials (UI-managed, encrypted) -> connected (demo flag
+  // shown), otherwise the paper-book stub.
+  let broker: {
+    id: string;
+    shortName: string;
+    status: "connected" | "paper";
+  } = {
+    id: "okx",
     shortName: "PAPER BOOK",
     status: "paper",
   };
   try {
-    const stored = await getBrokerCredentials("okx");
+    const { activeBrokerId } = await getRuntimeSettings();
+    const id = isKnownBroker(activeBrokerId) ? activeBrokerId : "okx";
+    const stored = await getBrokerCredentials(id);
     if (stored) {
       broker = {
-        shortName: stored.mode === "live" ? "OKX" : "OKX DEMO",
+        id,
+        shortName:
+          id === "alpaca"
+            ? stored.mode === "live"
+              ? "ALPACA"
+              : "ALPACA PAPER"
+            : stored.mode === "live"
+              ? "OKX"
+              : "OKX DEMO",
         status: "connected",
       };
+    } else {
+      broker = { id, shortName: "PAPER BOOK", status: "paper" };
     }
   } catch {
     // DB hiccup: keep the paper-book default instead of failing the payload.

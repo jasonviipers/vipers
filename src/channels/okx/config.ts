@@ -44,9 +44,9 @@ const REGION_ENDPOINTS = {
   },
 } as const;
 
-export const OKX_BROKER_ID = "okx";
+const OKX_BROKER_ID = "okx";
 
-export async function getOKXCredentials(): Promise<{
+async function getOKXCredentials(): Promise<{
   apiKey: string;
   passphrase: string;
   secretKey: string;
@@ -56,6 +56,11 @@ export async function getOKXCredentials(): Promise<{
     throw new Error(
       "OKX is not configured: no credentials stored. " +
         "Add them in /settings → BROKER ACCOUNTS, or keep the broker unset to use the paper stub.",
+    );
+  }
+  if (creds.passphrase === undefined) {
+    throw new Error(
+      "OKX credentials are missing the passphrase — re-save the active slot's credentials with the passphrase set",
     );
   }
   return {

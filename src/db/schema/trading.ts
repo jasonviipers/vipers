@@ -40,6 +40,14 @@ export const runtimeSettings = pgTable("runtime_settings", {
    * the operator explicitly enables automation in /settings. Manual runs
    * (POST /api/agents/db/[id]/run) are unaffected.
    */
+  /**
+   * Which broker orders route through ("okx" | "alpaca"). Durable and
+   * server-owned (runtime_settings singleton row), written via PUT
+   * /api/settings/runtime; the execution tool resolves this per order so
+   * switching brokers is a deliberate operator action, never a
+   * localStorage preference the pipeline can ignore.
+   */
+  activeBrokerId: text("active_broker_id").notNull().default("okx"),
   automationEnabled: boolean("automation_enabled").notNull().default(false),
   /** Seconds between automatic full-pipeline passes (bounded 60–3600). */
   automationIntervalSec: integer("automation_interval_sec"),
@@ -52,6 +60,15 @@ export const runtimeSettings = pgTable("runtime_settings", {
   id: text("id").primaryKey(),
   maxDailyLossPct: integer("max_daily_loss_pct"),
   maxOpenPositions: integer("max_open_positions"),
+  /**
+   * Auto-rollback thresholds for capital-bearing strategy plugins (see
+   * src/lib/jobs/strategy-rollback-job.ts). Percent, integer; a plugin at
+   * CANARY/LIVE whose lineage-head metrics breach a configured threshold
+   * (>= comparison) is disabled through the audited kill switch. NULL =
+   * disabled — a rollback trigger must be deliberately predeclared.
+   */
+  rollbackMaxDrawdownPct: integer("rollback_max_drawdown_pct"),
+  rollbackMaxLossPct: integer("rollback_max_loss_pct"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
@@ -66,12 +83,17 @@ export const runtimeSettings = pgTable("runtime_settings", {
  * — only masked hints and booleans are ever returned to the client.
  */
 export const brokerCredentials = pgTable("broker_credentials", {
-  apiKeyCipher: text("api_key_cipher").notNull(),
+  activeMode: text("active_mode").notNull().default("demo"), // "demo" | "live" — which slot orders route through
+  /** Demo slot: always populated (backfilled from the legacy single set). */
+  apiKeyDemoCipher: text("api_key_demo_cipher").notNull(),
+  /** Live slot: nullable until the operator saves live credentials. */
+  apiKeyLiveCipher: text("api_key_live_cipher"),
   id: text("id").primaryKey(), // broker id, e.g. "okx"
-  mode: text("mode").notNull().default("demo"), // "demo" | "live"
-  passphraseCipher: text("passphrase_cipher").notNull(),
-  region: text("region").notNull().default("default"), // "default" | "eea" | "us"
-  secretCipher: text("secret_cipher").notNull(),
+  passphraseDemoCipher: text("passphrase_demo_cipher").notNull(),
+  passphraseLiveCipher: text("passphrase_live_cipher"),
+  region: text("region").notNull().default("default"), // "default" | "eea" | "us" — account-level, shared by both slots
+  secretDemoCipher: text("secret_demo_cipher").notNull(),
+  secretLiveCipher: text("secret_live_cipher"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
@@ -152,6 +174,8 @@ export const orders = pgTable(
     /** Hash of the exact capital intent submitted to execution. */
     intentHash: text("intent_hash").notNull().default(""),
     mode: text("mode").notNull(), // "live" (OKX) or "paper" (notional book)
+    /** Broker that routed the order ("okx" | "alpaca"); reconciliation dispatches on it. */
+    brokerId: text("broker_id").notNull().default("okx"),
     positionSizePct: numeric("position_size_pct").notNull(),
     proposalId: text("proposal_id").notNull().unique(),
     quantity: numeric("quantity").notNull().default("0"),

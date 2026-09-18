@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-
+import type { BrokerId } from "@/channels/broker/registry";
 import { db } from "@/db";
 import { agents } from "@/db/schema/agent";
 import { orders, positions } from "@/db/schema/trading";
@@ -70,6 +70,7 @@ export interface OrderReservation {
 export async function reserveOrderSubmission(
   request: OrderRequest,
   mode: "live" | "paper",
+  brokerId: BrokerId = "okx",
 ): Promise<OrderReservation> {
   const agentId = await resolveExecutionAgentId("order-executor-agent");
   const inserted = await db
@@ -77,6 +78,7 @@ export async function reserveOrderSubmission(
     .values({
       agentId,
       asset: request.asset,
+      brokerId,
       detail: "Order submission reserved; awaiting broker outcome",
       direction: request.direction,
       mode,
@@ -146,6 +148,7 @@ export async function recordOrderOutcome(
   request: OrderRequest,
   result: OrderResult,
   mode: "live" | "paper",
+  brokerId: BrokerId = "okx",
 ): Promise<PersistedOrderOutcome> {
   let entryPrice: string | undefined;
   if (result.status === "FILLED" && result.quantity > 0) {
@@ -166,6 +169,7 @@ export async function recordOrderOutcome(
     const updated = await tx
       .update(orders)
       .set({
+        brokerId,
         brokerOrderId: result.orderId || null,
         detail: result.detail ?? null,
         mode,

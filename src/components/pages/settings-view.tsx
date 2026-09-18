@@ -13,14 +13,14 @@ import {
   Shield,
   Wallet,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { BrokerAccountsSection } from "@/components/settings/broker-accounts";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useColorScheme } from "@/context/color-scheme-context";
 import {
   COLOR_SCHEMES,
   type ColorSchemeId,
-  useColorScheme,
-} from "@/context/color-scheme-context";
+} from "@/context/color-scheme-context-utils";
 import { isDemoSession } from "@/lib/api-key";
 import {
   DEFAULT_TERMINAL_SETTINGS,
@@ -123,6 +123,7 @@ function ToggleRow({
       </div>
       <button
         type="button"
+        aria-label={label}
         onClick={() => onChange(!value)}
         className={`relative h-5 w-9 shrink-0 border transition-colors ${
           value
@@ -357,6 +358,159 @@ function ColorSchemeSelect({
 
 // ── LLM API key manager ─────────────────────────────────────────────────
 
+function LlmKeyRowStatus({ status }: { status: LlmKeyStatus | undefined }) {
+  const sourceLabel =
+    status?.source === "database"
+      ? "STORED"
+      : status?.source === "env"
+        ? "ENV"
+        : "NOT SET";
+
+  return (
+    <span
+      className={`text-[9px] font-bold tracking-wider ${
+        status?.source ? "text-terminal-green" : "text-terminal-dim"
+      }`}
+    >
+      {sourceLabel}
+      {status?.hint ? ` ${status.hint}` : ""}
+    </span>
+  );
+}
+
+function LlmKeyRowAction({
+  demoSession,
+  editing,
+  hasKey,
+  onCancel,
+  onStartEdit,
+}: {
+  demoSession: boolean;
+  editing: boolean;
+  hasKey: boolean;
+  onCancel: () => void;
+  onStartEdit: () => void;
+}) {
+  if (demoSession) {
+    return (
+      <span className="text-[9px] font-bold tracking-wider text-terminal-amber">
+        READ-ONLY
+      </span>
+    );
+  }
+  if (editing) {
+    return (
+      <button
+        type="button"
+        onClick={onCancel}
+        className="text-[9px] font-bold text-muted-foreground hover:text-foreground"
+      >
+        CANCEL
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onStartEdit}
+      className="text-[9px] font-bold tracking-wider text-terminal-green hover:text-foreground"
+    >
+      {hasKey ? "UPDATE" : "ADD KEY"}
+    </button>
+  );
+}
+
+function LlmKeyRowHeader({
+  provider,
+  status,
+  demoSession,
+  editing,
+  onCancel,
+  onStartEdit,
+}: {
+  provider: string;
+  status: LlmKeyStatus | undefined;
+  demoSession: boolean;
+  editing: boolean;
+  onCancel: () => void;
+  onStartEdit: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-xs font-bold text-foreground">{provider}</span>
+      <div className="flex items-center gap-2">
+        <LlmKeyRowStatus status={status} />
+        <LlmKeyRowAction
+          demoSession={demoSession}
+          editing={editing}
+          hasKey={Boolean(status?.source)}
+          onCancel={onCancel}
+          onStartEdit={onStartEdit}
+        />
+      </div>
+    </div>
+  );
+}
+
+function LlmKeyRowEditor({
+  provider,
+  status,
+  keyValue,
+  error,
+  savePending,
+  deletePending,
+  onKeyValueChange,
+  onSave,
+  onDelete,
+}: {
+  provider: string;
+  status: LlmKeyStatus | undefined;
+  keyValue: string;
+  error: string | null;
+  savePending: boolean;
+  deletePending: boolean;
+  onKeyValueChange: (v: string) => void;
+  onSave: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex gap-1.5">
+        <input
+          type="password"
+          value={keyValue}
+          placeholder={`${provider} API key`}
+          onChange={(e) => onKeyValueChange(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          className="flex-1 border border-border bg-secondary px-2 py-1.5 text-xs text-foreground placeholder:text-terminal-dim focus:border-terminal-green/40 focus:outline-none"
+        />
+        <button
+          type="button"
+          disabled={savePending || keyValue.trim().length < 8}
+          onClick={onSave}
+          className="border border-terminal-green/40 bg-terminal-green/10 px-3 text-[10px] font-bold tracking-wider text-terminal-green hover:bg-terminal-green/20 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {savePending ? "…" : "SAVE"}
+        </button>
+      </div>
+      {error && (
+        <span className="text-[10px] font-bold text-terminal-red">{error}</span>
+      )}
+      {status?.source === "database" && (
+        <button
+          type="button"
+          disabled={deletePending}
+          onClick={onDelete}
+          className="self-start text-[9px] font-bold tracking-wider text-terminal-red/80 hover:text-terminal-red"
+        >
+          REMOVE STORED KEY (FALL BACK TO ENV)
+        </button>
+      )}
+    </div>
+  );
+}
+
 function LlmKeyRow({
   provider,
   status,
@@ -421,90 +575,32 @@ function LlmKeyRow({
       setError(err instanceof Error ? err.message : "delete failed"),
   });
 
-  const sourceLabel =
-    status?.source === "database"
-      ? "STORED"
-      : status?.source === "env"
-        ? "ENV"
-        : "NOT SET";
-
   return (
     <div className="flex flex-col gap-1 border-b border-border/50 pb-2 last:border-b-0">
-      <div className="flex items-center justify-between gap-4">
-        <span className="text-xs font-bold text-foreground">{provider}</span>
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-[9px] font-bold tracking-wider ${
-              status?.source ? "text-terminal-green" : "text-terminal-dim"
-            }`}
-          >
-            {sourceLabel}
-            {status?.hint ? ` ${status.hint}` : ""}
-          </span>
-          {demoSession ? (
-            <span className="text-[9px] font-bold tracking-wider text-terminal-amber">
-              READ-ONLY
-            </span>
-          ) : editing ? (
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(false);
-                setKeyValue("");
-                setError(null);
-              }}
-              className="text-[9px] font-bold text-muted-foreground hover:text-foreground"
-            >
-              CANCEL
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="text-[9px] font-bold tracking-wider text-terminal-green hover:text-foreground"
-            >
-              {status?.source ? "UPDATE" : "ADD KEY"}
-            </button>
-          )}
-        </div>
-      </div>
+      <LlmKeyRowHeader
+        provider={provider}
+        status={status}
+        demoSession={demoSession}
+        editing={editing}
+        onCancel={() => {
+          setEditing(false);
+          setKeyValue("");
+          setError(null);
+        }}
+        onStartEdit={() => setEditing(true)}
+      />
       {editing && (
-        <div className="flex flex-col gap-1.5">
-          <div className="flex gap-1.5">
-            <input
-              type="password"
-              value={keyValue}
-              placeholder={`${provider} API key`}
-              onChange={(e) => setKeyValue(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              className="flex-1 border border-border bg-secondary px-2 py-1.5 text-xs text-foreground placeholder:text-terminal-dim focus:border-terminal-green/40 focus:outline-none"
-            />
-            <button
-              type="button"
-              disabled={saveMutation.isPending || keyValue.trim().length < 8}
-              onClick={() => saveMutation.mutate()}
-              className="border border-terminal-green/40 bg-terminal-green/10 px-3 text-[10px] font-bold tracking-wider text-terminal-green hover:bg-terminal-green/20 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {saveMutation.isPending ? "…" : "SAVE"}
-            </button>
-          </div>
-          {error && (
-            <span className="text-[10px] font-bold text-terminal-red">
-              {error}
-            </span>
-          )}
-          {status?.source === "database" && (
-            <button
-              type="button"
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteMutation.mutate()}
-              className="self-start text-[9px] font-bold tracking-wider text-terminal-red/80 hover:text-terminal-red"
-            >
-              REMOVE STORED KEY (FALL BACK TO ENV)
-            </button>
-          )}
-        </div>
+        <LlmKeyRowEditor
+          provider={provider}
+          status={status}
+          keyValue={keyValue}
+          error={error}
+          savePending={saveMutation.isPending}
+          deletePending={deleteMutation.isPending}
+          onKeyValueChange={setKeyValue}
+          onSave={() => saveMutation.mutate()}
+          onDelete={() => deleteMutation.mutate()}
+        />
       )}
     </div>
   );
@@ -648,16 +744,364 @@ function LlmCredentialsSection() {
   );
 }
 
+// ── Settings surface composition ─────────────────────────────────────────
+
+type SettingsSetter = <K extends keyof TerminalSettings>(
+  key: K,
+  value: TerminalSettings[K],
+) => void;
+
+type RuntimeSetter = <K extends keyof RuntimeSettings>(
+  key: K,
+  value: RuntimeSettings[K],
+) => void;
+
+function DisplayInterfaceSection({
+  settings,
+  onChange,
+}: {
+  settings: TerminalSettings;
+  onChange: SettingsSetter;
+}) {
+  return (
+    <>
+      <InlineSelect
+        label="TIMEZONE"
+        description="All timestamps are displayed in this timezone"
+        value={settings.timezone}
+        options={["UTC", "EST", "CST", "PST", "CET", "JST", "AEST"]}
+        onChange={(v) => onChange("timezone", v)}
+      />
+      <InlineSelect
+        label="BASE CURRENCY"
+        description="Denomination for portfolio and P&L values"
+        value={settings.baseCurrency}
+        options={["USD", "EUR", "GBP", "JPY", "BTC", "ETH"]}
+        onChange={(v) => onChange("baseCurrency", v)}
+      />
+      <ToggleRow
+        label="COMPACT MODE"
+        description="Reduce padding and show more data on screen"
+        value={settings.compactMode}
+        onChange={(v) => onChange("compactMode", v)}
+      />
+      <ToggleRow
+        label="ANIMATIONS"
+        description="Flash and slide transitions for live values"
+        value={settings.animationsEnabled}
+        onChange={(v) => onChange("animationsEnabled", v)}
+      />
+      <ToggleRow
+        label="TICKER BAR"
+        description="Show scrolling price ticker at top of terminal"
+        value={settings.tickerBarEnabled}
+        onChange={(v) => onChange("tickerBarEnabled", v)}
+      />
+      <ToggleRow
+        label="SOUND EFFECTS"
+        description="Play audio cues for trades and alerts"
+        value={settings.soundEnabled}
+        onChange={(v) => onChange("soundEnabled", v)}
+      />
+    </>
+  );
+}
+
+function NotificationsSection({
+  settings,
+  onChange,
+}: {
+  settings: TerminalSettings;
+  onChange: SettingsSetter;
+}) {
+  return (
+    <>
+      <ToggleRow
+        label="TRADE EXECUTION ALERTS"
+        description="Notify when positions are opened or closed"
+        value={settings.tradeAlerts}
+        onChange={(v) => onChange("tradeAlerts", v)}
+      />
+      <ToggleRow
+        label="SIGNAL ALERTS"
+        description="Notify when signals meet entry threshold"
+        value={settings.signalAlerts}
+        onChange={(v) => onChange("signalAlerts", v)}
+      />
+      <ToggleRow
+        label="RISK ALERTS"
+        description="Notify on drawdown warnings and limit breaches"
+        value={settings.riskAlerts}
+        onChange={(v) => onChange("riskAlerts", v)}
+      />
+      <ToggleRow
+        label="AGENT STATUS ALERTS"
+        description="Notify when agents go offline or encounter errors"
+        value={settings.agentStatusAlerts}
+        onChange={(v) => onChange("agentStatusAlerts", v)}
+      />
+      <ToggleRow
+        label="CONSENSUS ALERTS"
+        description="Notify when the swarm reaches consensus on a proposal"
+        value={settings.consensusAlerts}
+        onChange={(v) => onChange("consensusAlerts", v)}
+      />
+      <SliderRow
+        label="ALERT SCORE THRESHOLD"
+        description="Minimum signal score to trigger notifications"
+        value={settings.alertThreshold}
+        min={10}
+        max={100}
+        color="text-terminal-amber"
+        onChange={(v) => onChange("alertThreshold", v)}
+      />
+    </>
+  );
+}
+
+function KillSwitchRow({
+  enabled,
+  isLoading,
+  disabled,
+  error,
+  onToggle,
+}: {
+  enabled: boolean;
+  isLoading: boolean;
+  disabled: boolean;
+  error: string | null;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-border pt-3">
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-1.5">
+          <AlertTriangle className="h-3 w-3 text-terminal-red" />
+          <span className="text-xs font-bold text-terminal-red">
+            KILL SWITCH
+          </span>
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          Emergency halt: blocks all new order submission at the server-side
+          risk gate
+        </span>
+        {error && (
+          <span className="text-[10px] font-bold text-terminal-red">
+            {error}
+          </span>
+        )}
+      </div>{" "}
+      <button
+        type="button"
+        aria-label={enabled ? "Disarm kill switch" : "Arm kill switch"}
+        disabled={disabled}
+        onClick={onToggle}
+        className={`shrink-0 border px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+          enabled
+            ? "border-terminal-red/40 bg-terminal-red/10 text-terminal-red"
+            : "border-border bg-secondary text-terminal-dim"
+        }`}
+      >
+        {isLoading ? "…" : enabled ? "ARMED" : "DISARMED"}
+      </button>
+    </div>
+  );
+}
+
+function RiskManagementSection({
+  runtime,
+  serverUnreachable,
+  error,
+  onChange,
+  killSwitchEnabled,
+  killSwitchIsLoading,
+  killSwitchDisabled,
+  killSwitchError,
+  onToggleKillSwitch,
+}: {
+  runtime: RuntimeSettings;
+  serverUnreachable: boolean;
+  error: string | null;
+  onChange: RuntimeSetter;
+  killSwitchEnabled: boolean;
+  killSwitchIsLoading: boolean;
+  killSwitchDisabled: boolean;
+  killSwitchError: string | null;
+  onToggleKillSwitch: () => void;
+}) {
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        <SliderRow
+          label="MAX DAILY LOSS"
+          description="Risk gate rejects proposals when today's realized loss exceeds this share of capital"
+          value={runtime.maxDailyLossPct}
+          min={1}
+          max={20}
+          suffix="%"
+          color="text-terminal-red"
+          onChange={(v) => onChange("maxDailyLossPct", v)}
+        />
+        {serverUnreachable && (
+          <span className="text-[10px] text-terminal-red">
+            SERVER UNREACHABLE — showing defaults
+          </span>
+        )}
+        {error && (
+          <span className="text-[10px] font-bold text-terminal-red">
+            {error}
+          </span>
+        )}
+      </div>
+      <SliderRow
+        label="MAX OPEN POSITIONS"
+        description="Risk gate rejects proposals that would exceed this many concurrent open positions"
+        value={runtime.maxOpenPositions}
+        min={1}
+        max={50}
+        color="text-terminal-amber"
+        onChange={(v) => onChange("maxOpenPositions", v)}
+      />
+      <KillSwitchRow
+        enabled={killSwitchEnabled}
+        isLoading={killSwitchIsLoading}
+        disabled={killSwitchDisabled}
+        error={killSwitchError}
+        onToggle={onToggleKillSwitch}
+      />
+    </>
+  );
+}
+
+function AgentAutomationSection({
+  enabled,
+  interval,
+  isSaving,
+  error,
+  onChange,
+}: {
+  enabled: boolean;
+  interval: number;
+  isSaving: boolean;
+  error: string | null;
+  onChange: RuntimeSetter;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs font-bold text-foreground">
+            ENABLE AGENT AUTOMATION
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            Runs signal → analysis → consensus → risk → execution automatically.
+            The kill switch and risk caps still gate every order.
+          </span>
+          {error && (
+            <span className="text-[10px] font-bold text-terminal-red">
+              {error}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          aria-label={
+            enabled ? "Disable agent automation" : "Enable agent automation"
+          }
+          aria-pressed={enabled}
+          disabled={isSaving}
+          onClick={() => onChange("automationEnabled", !enabled)}
+          className={`shrink-0 border px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+            enabled
+              ? "border-terminal-green/40 bg-terminal-green/10 text-terminal-green"
+              : "border-border bg-secondary text-terminal-dim"
+          }`}
+        >
+          {enabled ? "ENABLED" : "DISABLED"}
+        </button>
+      </div>
+      {isSaving && (
+        <span className="text-[10px] font-bold text-terminal-cyan">
+          SAVING AUTOMATION STATE…
+        </span>
+      )}
+      <div className="border-t border-border pt-2">
+        <SliderRow
+          label="AUTOMATION INTERVAL"
+          description="Time between automatic pipeline passes; each pass analyzes one asset in rotation (BTC → ETH → SOL → XRP → DOGE)"
+          value={interval}
+          min={60}
+          max={3600}
+          suffix="s"
+          color="text-terminal-cyan"
+          onChange={(v) => onChange("automationIntervalSec", v)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AgentConfigurationSection({
+  runtime,
+  serverUnreachable,
+  onChange,
+}: {
+  runtime: RuntimeSettings;
+  serverUnreachable: boolean;
+  onChange: RuntimeSetter;
+}) {
+  return (
+    <>
+      <InlineSelect
+        label="DEFAULT LLM PROVIDER"
+        description="Live: the agent fleet's model switches to this provider on the next pipeline run (key resolved from the stored keys below, then env)"
+        value={runtime.defaultLlmProvider}
+        options={["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK"]}
+        onChange={(v) => onChange("defaultLlmProvider", v)}
+      />
+      {serverUnreachable && (
+        <span className="text-[10px] text-terminal-red">
+          SERVER UNREACHABLE — provider switching disabled
+        </span>
+      )}
+      <AgentLlmConfigSection fleetProvider={runtime.defaultLlmProvider} />
+      <LlmCredentialsSection />
+      <SliderRow
+        label="CONSENSUS QUORUM"
+        description="Approval percentage the COORDINATION step requires before executing a proposal"
+        value={runtime.consensusQuorum}
+        min={30}
+        max={100}
+        suffix="%"
+        color="text-terminal-green"
+        onChange={(v) => onChange("consensusQuorum", v)}
+      />
+      <SliderRow
+        label="HEARTBEAT INTERVAL"
+        description="Agents are shown offline after 3 missed heartbeats (interval × 3)"
+        value={runtime.heartbeatInterval}
+        min={5}
+        max={120}
+        suffix="s"
+        color="text-terminal-cyan"
+        onChange={(v) => onChange("heartbeatInterval", v)}
+      />
+      <ToggleRow
+        label="DEBUG MODE"
+        description="Live feed appends raw pipeline detail (rejection reasons, thresholds)"
+        value={runtime.debugMode}
+        onChange={(v) => onChange("debugMode", v)}
+      />
+    </>
+  );
+}
+
 export function SettingsView() {
   const { scheme: colorScheme, setScheme: setColorScheme } = useColorScheme();
-  const [settings, setSettings] = useState<TerminalSettings>(
-    DEFAULT_TERMINAL_SETTINGS,
+  const [settings, setSettings] = useState<TerminalSettings>(() =>
+    loadTerminalSettings(),
   );
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    setSettings(loadTerminalSettings());
-  }, []);
 
   function set<K extends keyof TerminalSettings>(
     key: K,
@@ -869,44 +1313,7 @@ export function SettingsView() {
               title="DISPLAY & INTERFACE"
               description="Visual preferences and terminal behavior (this device)"
             >
-              <InlineSelect
-                label="TIMEZONE"
-                description="All timestamps are displayed in this timezone"
-                value={settings.timezone}
-                options={["UTC", "EST", "CST", "PST", "CET", "JST", "AEST"]}
-                onChange={(v) => set("timezone", v)}
-              />
-              <InlineSelect
-                label="BASE CURRENCY"
-                description="Denomination for portfolio and P&L values"
-                value={settings.baseCurrency}
-                options={["USD", "EUR", "GBP", "JPY", "BTC", "ETH"]}
-                onChange={(v) => set("baseCurrency", v)}
-              />
-              <ToggleRow
-                label="COMPACT MODE"
-                description="Reduce padding and show more data on screen"
-                value={settings.compactMode}
-                onChange={(v) => set("compactMode", v)}
-              />
-              <ToggleRow
-                label="ANIMATIONS"
-                description="Flash and slide transitions for live values"
-                value={settings.animationsEnabled}
-                onChange={(v) => set("animationsEnabled", v)}
-              />
-              <ToggleRow
-                label="TICKER BAR"
-                description="Show scrolling price ticker at top of terminal"
-                value={settings.tickerBarEnabled}
-                onChange={(v) => set("tickerBarEnabled", v)}
-              />
-              <ToggleRow
-                label="SOUND EFFECTS"
-                description="Play audio cues for trades and alerts"
-                value={settings.soundEnabled}
-                onChange={(v) => set("soundEnabled", v)}
-              />
+              <DisplayInterfaceSection settings={settings} onChange={set} />
             </SettingsSection>
 
             {/* Risk Management */}
@@ -915,81 +1322,21 @@ export function SettingsView() {
               title="RISK MANAGEMENT"
               description="Server-enforced limits — gated by the risk engine on every proposal"
             >
-              <div className="flex flex-col gap-1">
-                <SliderRow
-                  label="MAX DAILY LOSS"
-                  description="Risk gate rejects proposals when today's realized loss exceeds this share of capital"
-                  value={runtime.maxDailyLossPct}
-                  min={1}
-                  max={20}
-                  suffix="%"
-                  color="text-terminal-red"
-                  onChange={(v) => setRuntime("maxDailyLossPct", v)}
-                />
-                {runtimeQuery.isError && (
-                  <span className="text-[10px] text-terminal-red">
-                    SERVER UNREACHABLE — showing defaults
-                  </span>
-                )}
-                {runtimeError && (
-                  <span className="text-[10px] font-bold text-terminal-red">
-                    {runtimeError}
-                  </span>
-                )}
-              </div>
-              <SliderRow
-                label="MAX OPEN POSITIONS"
-                description="Risk gate rejects proposals that would exceed this many concurrent open positions"
-                value={runtime.maxOpenPositions}
-                min={1}
-                max={50}
-                color="text-terminal-amber"
-                onChange={(v) => setRuntime("maxOpenPositions", v)}
+              <RiskManagementSection
+                runtime={runtime}
+                serverUnreachable={runtimeQuery.isError}
+                error={runtimeError}
+                onChange={setRuntime}
+                killSwitchEnabled={killSwitchQuery.data ?? false}
+                killSwitchIsLoading={killSwitchQuery.isLoading}
+                killSwitchDisabled={
+                  killSwitchQuery.isPending || killSwitchQuery.isLoading
+                }
+                killSwitchError={killSwitchError}
+                onToggleKillSwitch={() =>
+                  killSwitchMutation.mutate(!(killSwitchQuery.data ?? false))
+                }
               />
-              <div className="flex items-center justify-between gap-4 border-t border-border pt-3">
-                <div className="flex flex-col gap-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <AlertTriangle className="h-3 w-3 text-terminal-red" />
-                    <span className="text-xs font-bold text-terminal-red">
-                      KILL SWITCH
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-muted-foreground">
-                    Emergency halt: blocks all new order submission at the
-                    server-side risk gate
-                  </span>
-                  {killSwitchError && (
-                    <span className="text-[10px] font-bold text-terminal-red">
-                      {killSwitchError}
-                    </span>
-                  )}
-                </div>{" "}
-                <button
-                  type="button"
-                  aria-label={
-                    killSwitchQuery.data
-                      ? "Disarm kill switch"
-                      : "Arm kill switch"
-                  }
-                  disabled={
-                    killSwitchQuery.isPending || killSwitchQuery.isLoading
-                  }
-                  onClick={() =>
-                    killSwitchMutation.mutate(!killSwitchQuery.data)
-                  }
-                  className={`shrink-0 border px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                    killSwitchQuery.data
-                      ? "border-terminal-red/40 bg-terminal-red/10 text-terminal-red"
-                      : "border-border bg-secondary text-terminal-dim"
-                  }`}
-                >
-                  {killSwitchQuery.isLoading
-                    ? "…"
-                    : killSwitchQuery.data
-                      ? "ARMED"
-                      : "DISARMED"}
-                </button>
-              </div>
             </SettingsSection>
 
             {/* Agent Automation */}
@@ -998,65 +1345,13 @@ export function SettingsView() {
               title="AGENT AUTOMATION"
               description="Server-enforced autonomous loop — the swarm runs the full pipeline on a schedule"
             >
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-xs font-bold text-foreground">
-                      ENABLE AGENT AUTOMATION
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">
-                      Runs signal → analysis → consensus → risk → execution
-                      automatically. The kill switch and risk caps still gate
-                      every order.
-                    </span>
-                    {runtimeError && (
-                      <span className="text-[10px] font-bold text-terminal-red">
-                        {runtimeError}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    aria-label={
-                      runtime.automationEnabled
-                        ? "Disable agent automation"
-                        : "Enable agent automation"
-                    }
-                    aria-pressed={runtime.automationEnabled}
-                    disabled={runtimeMutation.isPending}
-                    onClick={() =>
-                      setRuntime(
-                        "automationEnabled",
-                        !runtime.automationEnabled,
-                      )
-                    }
-                    className={`shrink-0 border px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                      runtime.automationEnabled
-                        ? "border-terminal-green/40 bg-terminal-green/10 text-terminal-green"
-                        : "border-border bg-secondary text-terminal-dim"
-                    }`}
-                  >
-                    {runtime.automationEnabled ? "ENABLED" : "DISABLED"}
-                  </button>
-                </div>
-                {runtimeMutation.isPending && (
-                  <span className="text-[10px] font-bold text-terminal-cyan">
-                    SAVING AUTOMATION STATE…
-                  </span>
-                )}
-                <div className="border-t border-border pt-2">
-                  <SliderRow
-                    label="AUTOMATION INTERVAL"
-                    description="Time between automatic pipeline passes; each pass analyzes one asset in rotation (BTC → ETH → SOL → XRP → DOGE)"
-                    value={runtime.automationIntervalSec}
-                    min={60}
-                    max={3600}
-                    suffix="s"
-                    color="text-terminal-cyan"
-                    onChange={(v) => setRuntime("automationIntervalSec", v)}
-                  />
-                </div>
-              </div>
+              <AgentAutomationSection
+                enabled={runtime.automationEnabled}
+                interval={runtime.automationIntervalSec}
+                isSaving={runtimeMutation.isPending}
+                error={runtimeError}
+                onChange={setRuntime}
+              />
             </SettingsSection>
           </div>
 
@@ -1068,45 +1363,7 @@ export function SettingsView() {
               title="NOTIFICATIONS"
               description="Alert preferences and thresholds (this device)"
             >
-              <ToggleRow
-                label="TRADE EXECUTION ALERTS"
-                description="Notify when positions are opened or closed"
-                value={settings.tradeAlerts}
-                onChange={(v) => set("tradeAlerts", v)}
-              />
-              <ToggleRow
-                label="SIGNAL ALERTS"
-                description="Notify when signals meet entry threshold"
-                value={settings.signalAlerts}
-                onChange={(v) => set("signalAlerts", v)}
-              />
-              <ToggleRow
-                label="RISK ALERTS"
-                description="Notify on drawdown warnings and limit breaches"
-                value={settings.riskAlerts}
-                onChange={(v) => set("riskAlerts", v)}
-              />
-              <ToggleRow
-                label="AGENT STATUS ALERTS"
-                description="Notify when agents go offline or encounter errors"
-                value={settings.agentStatusAlerts}
-                onChange={(v) => set("agentStatusAlerts", v)}
-              />
-              <ToggleRow
-                label="CONSENSUS ALERTS"
-                description="Notify when the swarm reaches consensus on a proposal"
-                value={settings.consensusAlerts}
-                onChange={(v) => set("consensusAlerts", v)}
-              />
-              <SliderRow
-                label="ALERT SCORE THRESHOLD"
-                description="Minimum signal score to trigger notifications"
-                value={settings.alertThreshold}
-                min={10}
-                max={100}
-                color="text-terminal-amber"
-                onChange={(v) => set("alertThreshold", v)}
-              />
+              <NotificationsSection settings={settings} onChange={set} />
             </SettingsSection>
 
             {/* Agent Configuration */}
@@ -1115,47 +1372,10 @@ export function SettingsView() {
               title="AGENT CONFIGURATION"
               description="Pipeline-wide parameters enforced by the coordination layer"
             >
-              <InlineSelect
-                label="DEFAULT LLM PROVIDER"
-                description="Live: the agent fleet's model switches to this provider on the next pipeline run (key resolved from the stored keys below, then env)"
-                value={runtime.defaultLlmProvider}
-                options={["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK"]}
-                onChange={(v) => setRuntime("defaultLlmProvider", v)}
-              />
-              {runtimeQuery.isError && (
-                <span className="text-[10px] text-terminal-red">
-                  SERVER UNREACHABLE — provider switching disabled
-                </span>
-              )}
-              <AgentLlmConfigSection
-                fleetProvider={runtime.defaultLlmProvider}
-              />
-              <LlmCredentialsSection />
-              <SliderRow
-                label="CONSENSUS QUORUM"
-                description="Approval percentage the COORDINATION step requires before executing a proposal"
-                value={runtime.consensusQuorum}
-                min={30}
-                max={100}
-                suffix="%"
-                color="text-terminal-green"
-                onChange={(v) => setRuntime("consensusQuorum", v)}
-              />
-              <SliderRow
-                label="HEARTBEAT INTERVAL"
-                description="Agents are shown offline after 3 missed heartbeats (interval × 3)"
-                value={runtime.heartbeatInterval}
-                min={5}
-                max={120}
-                suffix="s"
-                color="text-terminal-cyan"
-                onChange={(v) => setRuntime("heartbeatInterval", v)}
-              />
-              <ToggleRow
-                label="DEBUG MODE"
-                description="Live feed appends raw pipeline detail (rejection reasons, thresholds)"
-                value={runtime.debugMode}
-                onChange={(v) => setRuntime("debugMode", v)}
+              <AgentConfigurationSection
+                runtime={runtime}
+                serverUnreachable={runtimeQuery.isError}
+                onChange={setRuntime}
               />
             </SettingsSection>
           </div>

@@ -1,3 +1,6 @@
+import { AlpacaApiError } from "@/channels/alpaca/client";
+import { ALPACA_BROKER_ID } from "@/channels/alpaca/config";
+import type { BrokerId } from "@/channels/broker/registry";
 import { OKXApiError } from "@/channels/okx/client";
 import {
   BrokerNotConfiguredError,
@@ -10,16 +13,17 @@ import {
 import { log } from "@/lib/evlog";
 
 /**
- * OKX credential health.
+ * Broker credential health.
  *
- * "Credentials stored" (all three fields present) says nothing about
+ * "Credentials stored" (all required fields present) says nothing about
  * whether they actually authenticate — an expired demo key, a mistyped
  * secret or a region mismatch all pass that check but fail on every API
- * call. This module actively probes the account endpoint and classifies
- * the failure so the UI can warn instead of silently showing stale zeros.
+ * call. This module actively probes the account endpoint of the ACTIVE
+ * broker and classifies the failure so the UI can warn instead of silently
+ * showing stale zeros.
  *
  * Results are cached per broker (5 min TTL, failure-shortened to 30 s) so
- * the /api/broker/status poll (30 s interval) never hammers the OKX API.
+ * the /api/broker/status poll (30 s interval) never hammers the API.
  */
 
 const HEALTH_OK_TTL_MS = 5 * 60 * 1000;
@@ -30,7 +34,7 @@ export interface BrokerHealth {
   /** Operator-facing fix hint; present only when healthy === false. */
   hint?: string;
   healthy: boolean;
-  /** OKX error code (e.g. "50113", "50119") when the probe failed. */
+  /** Broker error code when the probe failed (OKX code / Alpaca HTTP status). */
   okxCode?: string;
   reason?: string;
 }
@@ -67,12 +71,13 @@ function environmentMismatchHint(mode: "demo" | "live"): string {
 }
 
 /**
- * Probe OKX authentication by reading the account equity. Configured but
- * failing credentials yield healthy:false with a hint; unconfigured brokers
- * yield healthy:false with no OKX error (nothing to authenticate).
+ * Probe the broker's authentication by reading its account equity.
+ * Configured but failing credentials yield healthy:false with a hint;
+ * unconfigured brokers yield healthy:false with no broker error (nothing
+ * to authenticate).
  */
 export async function checkBrokerHealth(
-  brokerId = "okx",
+  brokerId: BrokerId = "okx",
 ): Promise<BrokerHealth> {
   const cached = cache.get(brokerId);
   if (cached && cached.expiresAt > Date.now()) {
@@ -89,14 +94,19 @@ export async function checkBrokerHealth(
       if (!(await isBrokerConfigured(brokerId))) {
         health = { checkedAt: new Date().toISOString(), healthy: false };
       } else {
-        const equity = await fetchBrokerEquity();
+        const equity = await fetchBrokerEquity(brokerId);
         health = {
           checkedAt: equity.updatedAt,
           healthy: true,
         };
       }
     } catch (error) {
-      const okxCode = error instanceof OKXApiError ? error.code : undefined;
+      const okxCode =
+        error instanceof OKXApiError
+          ? error.code
+          : error instanceof AlpacaApiError
+            ? String(error.httpStatus)
+            : undefined;
       const reason =
         error instanceof BrokerNotConfiguredError
           ? undefined
@@ -104,7 +114,14 @@ export async function checkBrokerHealth(
             ? error.message
             : "unknown error";
       let hint: string | undefined;
-      if (okxCode === "50101") {
+      if (brokerId === ALPACA_BROKER_ID) {
+        // Alpaca signals auth problems with 401 (bad key/secret) or
+        // 403 (forbidden on the endpoint/family); give one actionable hint.
+        if (okxCode && ["401", "403"].includes(okxCode)) {
+          hint =
+            "Alpaca rejected the stored API key/secret — verify the paper/live credentials and re-save them";
+        }
+      } else if (okxCode === "50101") {
         // Mode-aware: the fix differs depending on which side is wrong.
         const stored = await getBrokerCredentials(brokerId).catch(() => null);
         hint = environmentMismatchHint(

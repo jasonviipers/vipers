@@ -20,7 +20,7 @@ export function timestampMs(): string {
   return new Date().toISOString();
 }
 
-export async function sign(
+async function sign(
   timestamp: string,
   method: string,
   requestPath: string,

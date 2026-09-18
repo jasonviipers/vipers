@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -24,12 +24,24 @@ export interface BrokerAuthHealth {
   reason?: string;
 }
 
-/** Server-derived broker state from GET /api/broker/status. */
+/** Per-mode slot presence from GET /api/broker/status (booleans only). */
+export interface BrokerSlotPresence {
+  apiKeySet: boolean;
+  passphraseSet: boolean;
+  secretSet: boolean;
+}
+
+/** Server-derived broker state from GET /api/broker/status?broker=<id>. */
 export interface BrokerServerStatus {
   auth?: BrokerAuthHealth;
   credentials: { apiKey: boolean; passphrase: boolean; secret: boolean };
   id: string;
   mode: "live" | "paper";
+  /** Whether this broker uses a passphrase at all (OKX yes, Alpaca no). */
+  requiresPassphrase: boolean;
+  /** Demo AND live credential slots — the switch renders from this. */
+  slots?: { demo: BrokerSlotPresence; live: BrokerSlotPresence };
+  region?: string;
 }
 
 export interface BrokerAccount {
@@ -47,28 +59,28 @@ export interface BrokerAccount {
 /**
  * Static broker catalog. Broker connection is decided SERVER-side by the
  * stored credentials (broker_credentials table — see GET /api/broker/status
- * and the execution tool's routing rule). The operator connects a broker
- * by saving credentials in the /settings panel; `tradingEnabled` is an
+ * and the execution tool's routing rule). Operations connect a broker by
+ * saving credentials in the /settings panel; `tradingEnabled` is an
  * additional local opt-in persisted here.
  */
-export const BROKER_CATALOG: Omit<BrokerAccount, "tradingEnabled">[] = [
+const BROKER_CATALOG: Omit<BrokerAccount, "tradingEnabled">[] = [
   {
     id: "okx",
     name: "OKX",
     shortName: "OKX",
     accountType: "crypto",
     description:
-      "Spot trading on USDT-quoted majors. Save your OKX API credentials in this panel (encrypted server-side); DEMO mode routes through OKX paper endpoints, LIVE mode trades real capital.",
+      "Spot trading on USDT-quoted majors. Save your OKX API credentials in this panel (encrypted server-side); DEMO mode routes through the local paper book, LIVE mode trades real capital.",
     supportedAssets: ["BTC", "ETH", "SOL", "XRP", "DOGE"],
   },
   {
     id: "alpaca",
     name: "Alpaca Markets",
     shortName: "ALPACA",
-    accountType: "stocks",
+    accountType: "multi-asset",
     description:
-      "US equities adapter is not wired to a broker yet; equity symbols execute on the paper book only.",
-    supportedAssets: ["AAPL", "NVDA", "TSLA", "SPY"],
+      "US equities + crypto (BTC/USD, ETH/USD) via the Alpaca trade API. DEMO credentials hit the Alpaca PAPER account, LIVE credentials trade real capital — same two-slot demo/live switch as OKX.",
+    supportedAssets: ["AAPL", "NVDA", "TSLA", "SPY", "BTC", "ETH"],
   },
 ];
 
@@ -84,15 +96,23 @@ interface StoredBrokerData {
 
 type BrokerContextValue = {
   brokers: BrokerAccount[];
+  /** Local (optimistic) selection — the server setting is authoritative. */
   activeBrokerId: string | null;
+  /** Durable server-side selection from GET /api/settings/runtime. */
+  serverActiveBrokerId: string | null;
   activeBroker: BrokerAccount;
   /** Brokers that are server-connected AND explicitly enabled by the operator. */
   connectedBrokers: BrokerAccount[];
-  /** Server-derived connection state; null until the first fetch resolves. */
-  serverStatus: BrokerServerStatus | null;
+  /** Server-derived connection state per broker; null until first fetch. */
+  serverStatuses: Record<string, BrokerServerStatus | null>;
   /** Per-broker connection status derived from the server payload. */
   connectionStatus: (id: string) => BrokerStatus;
-  setActiveBroker: (id: string) => void;
+  /**
+   * Switch the durable execution broker (PUT /api/settings/runtime).
+   * Resolves to false when the target is not connected+enabled or the
+   * server rejected the switch.
+   */
+  setActiveBroker: (id: string) => Promise<boolean>;
   setTradingEnabled: (id: string, enabled: boolean) => void;
 };
 
@@ -152,25 +172,25 @@ function toStoredBrokers(
 
 /**
  * Derive the per-broker connection status from the server payload — never
- * from anything the user typed. OKX is connected when the server reports
- * all three credentials present (live or demo); the alpaca adapter has no
- * broker wiring yet, so it is always disconnected.
+ * from anything the user typed. A broker is connected when the server
+ * reports all REQUIRED credential fields present (passphrase only matters
+ * for brokers that use one). Not-yet-fetched status is "pending".
  */
 function deriveConnectionStatus(
-  id: string,
-  serverStatus: BrokerServerStatus | null,
+  _id: string,
+  status: BrokerServerStatus | null | undefined,
 ): BrokerStatus {
-  if (id === "okx") {
-    if (!serverStatus) {
-      return "pending"; // server truth not loaded yet
-    }
-    const { apiKey, passphrase, secret } = serverStatus.credentials;
-    return apiKey && passphrase && secret ? "connected" : "disconnected";
+  if (!status) {
+    return "pending";
   }
-  return "disconnected";
+  const { apiKey, passphrase, secret } = status.credentials;
+  const complete =
+    apiKey && secret && (passphrase || status.requiresPassphrase === false);
+  return complete ? "connected" : "disconnected";
 }
 
 export function BrokerProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [brokers, setBrokers] = useState<BrokerAccount[]>(() =>
     hydrateBrokers({ activeBrokerId: null, brokers: {} }),
   );
@@ -180,21 +200,51 @@ export function BrokerProvider({ children }: { children: ReactNode }) {
   // (StrictMode's double effect pass made that race destructive).
   const [hydrated, setHydrated] = useState(false);
 
-  // Server-owned broker truth (credentials configured? live or demo?).
+  // Server-owned broker statuses (credentials configured? live or demo?).
   // The UI mirrors this; it can never contradict the execution tool's
-  // actual routing decision because both read the same env-derived state.
-  const { data: serverStatus } = useQuery<BrokerServerStatus>({
+  // actual routing decision because both read the same DB-derived state.
+  const { data: serverStatuses } = useQuery<
+    Record<string, BrokerServerStatus | null>
+  >({
     queryFn: async () => {
-      const res = await fetch("/api/broker/status");
-      if (!res.ok) {
-        throw new Error(`API ${res.status}: ${res.statusText}`);
-      }
-      return (await res.json()) as BrokerServerStatus;
+      const entries = await Promise.all(
+        BROKER_CATALOG.map(async (broker) => {
+          try {
+            const res = await fetch(`/api/broker/status?broker=${broker.id}`);
+            if (!res.ok) {
+              return [broker.id, null] as const;
+            }
+            return [
+              broker.id,
+              (await res.json()) as BrokerServerStatus,
+            ] as const;
+          } catch {
+            return [broker.id, null] as const;
+          }
+        }),
+      );
+      return Object.fromEntries(entries);
     },
-    queryKey: ["broker", "status"],
+    queryKey: ["broker", "statuses"],
     refetchInterval: 30_000,
     staleTime: 30_000,
   });
+
+  // Durable server-side broker selection — the routing target the
+  // execution tool actually uses. Not derived from localStorage.
+  const { data: runtimeSettings } = useQuery<{ activeBrokerId?: string }>({
+    queryFn: async () => {
+      const res = await fetch("/api/settings/runtime");
+      if (!res.ok) {
+        throw new Error(`API ${res.status}: ${res.statusText}`);
+      }
+      return (await res.json()) as { activeBrokerId?: string };
+    },
+    queryKey: ["settings", "runtime"],
+    refetchInterval: 30_000,
+    staleTime: 30_000,
+  });
+  const serverActiveBrokerId = runtimeSettings?.activeBrokerId ?? null;
 
   // Hydrate from localStorage on mount (SSR-safe: storage is only touched
   // in effects, so server and first client render match).
@@ -216,13 +266,49 @@ export function BrokerProvider({ children }: { children: ReactNode }) {
     });
   }, [brokers, activeBrokerId, hydrated]);
 
-  const setActiveBroker = useCallback((id: string) => {
-    setActiveBrokerId(id);
-  }, []);
+  // Switching the active broker is a SERVER-side durable decision: the
+  // execution pipeline reads runtime_settings.activeBrokerId, never client
+  // state. Only connected + explicitly enabled brokers can be selected.
+  const setActiveBroker = useCallback(
+    async (id: string): Promise<boolean> => {
+      const target = brokers.find((broker) => broker.id === id);
+      if (!target) {
+        return false;
+      }
+      const status = deriveConnectionStatus(id, serverStatuses?.[id] ?? null);
+      if (status !== "connected" || !target.tradingEnabled) {
+        return false;
+      }
+
+      const previous = activeBrokerId;
+      setActiveBrokerId(id);
+      try {
+        const res = await fetch("/api/settings/runtime", {
+          body: JSON.stringify({ activeBrokerId: id }),
+          headers: { "content-type": "application/json" },
+          method: "PUT",
+        });
+        if (!res.ok) {
+          throw new Error(`switch failed (${res.status})`);
+        }
+        // Re-pull the durable setting + broker truth so every consumer
+        // follows the new routing immediately.
+        queryClient.invalidateQueries({ queryKey: ["settings", "runtime"] });
+        queryClient.invalidateQueries({ queryKey: ["status"] });
+        return true;
+      } catch (error) {
+        // Revert the optimistic selection — the server is authoritative.
+        setActiveBrokerId(previous);
+        console.error(error);
+        return false;
+      }
+    },
+    [activeBrokerId, brokers, queryClient, serverStatuses],
+  );
 
   // Local operator preference — persisted synchronously via the single
   // writer effect above. This is a client-side gate only; the server's
-  // env-based routing is authoritative and cannot be changed from here.
+  // routing is authoritative and cannot be changed from here.
   const setTradingEnabled = useCallback((id: string, enabled: boolean) => {
     setBrokers((prev) =>
       prev.map((broker) =>
@@ -235,35 +321,60 @@ export function BrokerProvider({ children }: { children: ReactNode }) {
     () =>
       brokers.filter(
         (broker) =>
-          deriveConnectionStatus(broker.id, serverStatus ?? null) ===
+          deriveConnectionStatus(broker.id, serverStatuses?.[broker.id]) ===
             "connected" && broker.tradingEnabled,
       ),
-    [brokers, serverStatus],
+    [brokers, serverStatuses],
   );
 
   const activeBroker = useMemo(() => {
-    const byId = brokers.find((broker) => broker.id === activeBrokerId);
-    return byId ?? connectedBrokers[0] ?? brokers[0];
-  }, [brokers, activeBrokerId, connectedBrokers]);
+    // Server-side selection wins when it is connected + enabled; otherwise
+    // fall back to the local selection, then the first enabled broker.
+    const byServer = brokers.find(
+      (broker) => broker.id === serverActiveBrokerId && broker.tradingEnabled,
+    );
+    if (byServer && connectedBrokers.includes(byServer)) {
+      return byServer;
+    }
+    const byLocal = brokers.find((broker) => broker.id === activeBrokerId);
+    if (byLocal && connectedBrokers.includes(byLocal)) {
+      return byLocal;
+    }
+    return connectedBrokers[0] ?? brokers[0];
+  }, [activeBrokerId, brokers, connectedBrokers, serverActiveBrokerId]);
 
   const connectionStatus = useCallback(
-    (id: string) => deriveConnectionStatus(id, serverStatus ?? null),
-    [serverStatus],
+    (id: string) => deriveConnectionStatus(id, serverStatuses?.[id] ?? null),
+    [serverStatuses],
+  );
+
+  const providerValue = useMemo<BrokerContextValue>(
+    () => ({
+      activeBroker,
+      activeBrokerId,
+      brokers,
+      connectedBrokers,
+      connectionStatus,
+      serverActiveBrokerId,
+      serverStatuses: serverStatuses ?? {},
+      setActiveBroker,
+      setTradingEnabled,
+    }),
+    [
+      activeBroker,
+      activeBrokerId,
+      brokers,
+      connectedBrokers,
+      connectionStatus,
+      serverActiveBrokerId,
+      serverStatuses,
+      setActiveBroker,
+      setTradingEnabled,
+    ],
   );
 
   return (
-    <BrokerContext.Provider
-      value={{
-        activeBroker,
-        activeBrokerId,
-        brokers,
-        connectedBrokers,
-        connectionStatus,
-        serverStatus: serverStatus ?? null,
-        setActiveBroker,
-        setTradingEnabled,
-      }}
-    >
+    <BrokerContext.Provider value={providerValue}>
       {children}
     </BrokerContext.Provider>
   );

@@ -1,12 +1,12 @@
 import { eq, sql } from "drizzle-orm";
-
+import { alpacaClient } from "@/channels/alpaca/client";
+import type { BrokerId } from "@/channels/broker/registry";
 import { db } from "@/db";
 import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
 import { positions } from "@/db/schema/trading";
 import { getBrokerCredentials } from "@/lib/broker-credentials";
 import { postCapitalMovement } from "@/lib/capital-ledger";
 import { log } from "@/lib/evlog";
-
 import { okxClient } from "../channels/okx/client";
 
 /**
@@ -15,24 +15,24 @@ import { okxClient } from "../channels/okx/client";
  * TOTAL CAPITAL is derived from `capital_transactions` (the ledger is the
  * source of truth; see portfolio-snapshot-job). Connecting a broker alone
  * feeds nothing into that ledger, so the dashboard would show 0 forever.
- * This module closes the loop: it reads the OKX account equity and records
- * the delta vs. the ledger as a deposit/withdrawal movement, keeping the
- * ledger's append-only model intact.
+ * This module closes the loop: it reads the ACTIVE broker's account equity
+ * and records the delta vs. the ledger as a deposit/withdrawal movement,
+ * keeping the ledger's append-only model intact.
  *
  * The sync is authoritative toward the ledger but conservative about the
  * broker: only a real, decrypted credential set triggers an API call, and
  * only a positive account equity is ever recorded (a zero/failed equity
- * read writes nothing, so a transient OKX error can't wipe capital).
+ * read writes nothing, so a transient broker error can't wipe capital).
  */
 
 /** Ledger account id for broker-synced capital (mirrors EXECUTION_ACCOUNT). */
 const SYNC_ACCOUNT = "system";
 
 export interface BrokerEquity {
-  /** Account equity in USDT (OKX totalEq). */
+  /** Account equity (USDT on OKX, USD on Alpaca). */
   equityUsd: number;
   mode: "demo" | "live";
-  /** ISO timestamp of the OKX snapshot. */
+  /** ISO timestamp of the broker snapshot. */
   updatedAt: string;
 }
 
@@ -48,20 +48,41 @@ export interface SyncResult {
 }
 
 export class BrokerNotConfiguredError extends Error {
-  constructor() {
-    super("OKX is not configured: add credentials in /settings first");
+  constructor(brokerId: BrokerId = "okx") {
+    super(`${brokerId} is not configured: add credentials in /settings first`);
     this.name = "BrokerNotConfiguredError";
   }
 }
 
+const BROKER_QUOTE_CURRENCY: Record<BrokerId, string> = {
+  alpaca: "USD",
+  okx: "USDT",
+};
+
 /**
- * Read the OKX account equity in USDT. Throws BrokerNotConfiguredError when
- * no credentials are stored; propagates OKX API errors to the caller.
+ * Read the ACTIVE broker's account equity. Throws
+ * BrokerNotConfiguredError when no credentials are stored; propagates
+ * broker API errors to the caller.
  */
-export async function fetchBrokerEquity(): Promise<BrokerEquity> {
-  const stored = await getBrokerCredentials("okx");
+export async function fetchBrokerEquity(
+  brokerId: BrokerId = "okx",
+): Promise<BrokerEquity> {
+  const stored = await getBrokerCredentials(brokerId);
   if (!stored) {
-    throw new BrokerNotConfiguredError();
+    throw new BrokerNotConfiguredError(brokerId);
+  }
+
+  if (brokerId === "alpaca") {
+    const account = await alpacaClient.getAccount();
+    const equityUsd = Number(account?.equity ?? 0);
+    if (!Number.isFinite(equityUsd) || equityUsd < 0) {
+      throw new Error("Alpaca returned an unreadable account equity");
+    }
+    return {
+      equityUsd,
+      mode: stored.mode,
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   const balance = await okxClient.getBalance();
@@ -80,7 +101,7 @@ export async function fetchBrokerEquity(): Promise<BrokerEquity> {
 }
 
 /**
- * Reconcile the capital ledger with the current OKX account equity.
+ * Reconcile the capital ledger with the ACTIVE broker's account equity.
  *
  * Records exactly one `deposit` (equity above ledger) or `withdrawal`
  * (equity below ledger) movement for the gap, then refreshes the latest
@@ -88,35 +109,39 @@ export async function fetchBrokerEquity(): Promise<BrokerEquity> {
  * no waiting for the hourly rollup.
  *
  * Open positions are excluded from the delta on purpose: their unrealized
- * P&L is already part of OKX equity AND is added on top of the ledger by
+ * P&L is already part of broker equity AND is added on top of the ledger by
  * the capital rollup (`+ openPnl`), so including them here would count
  * that P&L twice.
  */
-export async function syncBrokerBalanceToLedger(): Promise<SyncResult> {
-  const equity = await fetchBrokerEquity();
+export async function syncBrokerBalanceToLedger(
+  brokerId: BrokerId = "okx",
+): Promise<SyncResult> {
+  const equity = await fetchBrokerEquity(brokerId);
+  const currency = BROKER_QUOTE_CURRENCY[brokerId];
 
   // Ledger capital WITHOUT open PnL — that part is owned by the rollup.
-  const [flows] = await db
-    .select({
-      deposits: sql<string>`coalesce(sum(${sql.raw(
-        "case when type = 'deposit' then amount else 0 end",
-      )}), '0')`,
-      withdrawals: sql<string>`coalesce(sum(${sql.raw(
-        "case when type = 'withdrawal' then amount else 0 end",
-      )}), '0')`,
-      realizedNet: sql<string>`coalesce(sum(${sql.raw(
-        "case when type = 'realized_pnl' then amount when type = 'fee' then -amount else 0 end",
-      )}), '0')`,
-    })
-    .from(capitalTransactions);
-
-  const [open] = await db
-    .select({
-      invested: sql<string>`coalesce(sum(${positions.entryPrice} * ${positions.quantity}), '0')`,
-      openPnl: sql<string>`coalesce(sum(${positions.pnl}), '0')`,
-    })
-    .from(positions)
-    .where(eq(positions.status, "OPEN"));
+  // Case expressions reference the typed columns so values stay bound to
+  // driver parameters (no string-built SQL).
+  // Aggregate selects return exactly one row; unwrap it in the promise so
+  // Promise.all types stay precise (no nested array destructure).
+  const [flows, open] = await Promise.all([
+    db
+      .select({
+        deposits: sql<string>`coalesce(sum(case when ${capitalTransactions.type} = 'deposit' then ${capitalTransactions.amount} else 0 end), '0')`,
+        withdrawals: sql<string>`coalesce(sum(case when ${capitalTransactions.type} = 'withdrawal' then ${capitalTransactions.amount} else 0 end), '0')`,
+        realizedNet: sql<string>`coalesce(sum(case when ${capitalTransactions.type} = 'realized_pnl' then ${capitalTransactions.amount} when ${capitalTransactions.type} = 'fee' then -${capitalTransactions.amount} else 0 end), '0')`,
+      })
+      .from(capitalTransactions)
+      .then((rows) => rows[0]),
+    db
+      .select({
+        invested: sql<string>`coalesce(sum(${positions.entryPrice} * ${positions.quantity}), '0')`,
+        openPnl: sql<string>`coalesce(sum(${positions.pnl}), '0')`,
+      })
+      .from(positions)
+      .where(eq(positions.status, "OPEN"))
+      .then((rows) => rows[0]),
+  ]);
 
   const ledgerCapital =
     Number(flows?.deposits ?? 0) -
@@ -140,9 +165,9 @@ export async function syncBrokerBalanceToLedger(): Promise<SyncResult> {
     const movementType = delta > 0 ? "deposit" : "withdrawal";
     const ledgerPost = await postCapitalMovement({
       amount: Math.abs(delta),
-      currency: "USDT",
-      idempotencyKey: `okx-balance:${equity.mode}:${equity.updatedAt}:${movementType}:${Math.abs(delta).toFixed(2)}`,
-      source: "okx-balance-reconciliation",
+      currency,
+      idempotencyKey: `${brokerId}-balance:${equity.mode}:${equity.updatedAt}:${movementType}:${Math.abs(delta).toFixed(2)}`,
+      source: `${brokerId}-balance-reconciliation`,
       type: movementType,
     });
 
@@ -172,7 +197,7 @@ export async function syncBrokerBalanceToLedger(): Promise<SyncResult> {
 
   log.info({
     action: "broker_balance_synced",
-    brokerId: "okx",
+    brokerId,
     delta,
     equityUsd: equity.equityUsd,
     mode: equity.mode,

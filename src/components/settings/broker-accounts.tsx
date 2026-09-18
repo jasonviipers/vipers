@@ -17,10 +17,22 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type BrokerAccount,
+  type BrokerServerStatus,
   type BrokerStatus,
   useBroker,
 } from "@/context/broker-context";
 import { isDemoSession } from "@/lib/api-key";
+
+/** Broker-specific label/currency bits shared by the panel rows. */
+const BROKER_UI: Record<string, { currency: string }> = {
+  alpaca: { currency: "USD" },
+  okx: { currency: "USDT" },
+};
+
+function brokerUrl(base: string, brokerId: string): string {
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}broker=${encodeURIComponent(brokerId)}`;
+}
 
 function BrokerStatusBadge({ status }: { status: BrokerStatus }) {
   const styles: Record<BrokerStatus, string> = {
@@ -101,20 +113,222 @@ function CredentialField({
   );
 }
 
-function OkxCredentialForm({ onSaved }: { onSaved: () => void }) {
+function DemoReadOnlyNotice() {
+  const demo = isDemoSession();
+
+  if (!demo) return null;
+  return (
+    <div className="flex items-start gap-2 border border-terminal-amber/30 bg-terminal-amber/5 p-2.5">
+      <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-terminal-amber" />
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] font-bold text-terminal-amber">
+          DEMO MODE — READ ONLY
+        </span>
+        <span className="text-[9px] text-muted-foreground leading-relaxed">
+          Credential management requires an operator API key. Disconnect and
+          sign in with a real key (demo keys cannot store credentials or trigger
+          trading).
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SlotSelector({
+  slot,
+  onSlotChange,
+  requiresPassphrase,
+  region,
+  onRegionChange,
+}: {
+  slot: "demo" | "live";
+  onSlotChange: (s: "demo" | "live") => void;
+  requiresPassphrase: boolean;
+  region: "default" | "eea" | "us";
+  onRegionChange: (r: "default" | "eea" | "us") => void;
+}) {
+  const slotButtons = (["demo", "live"] as const).map((s) => (
+    <button
+      key={s}
+      type="button"
+      onClick={() => onSlotChange(s)}
+      className={`py-1.5 text-[10px] font-bold tracking-wider transition-colors ${
+        slot === s
+          ? s === "live"
+            ? "bg-terminal-red/20 text-terminal-red"
+            : "bg-terminal-green/20 text-terminal-green"
+          : "bg-secondary text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {s === "live" ? "LIVE" : "DEMO"}
+    </button>
+  ));
+
+  if (!requiresPassphrase) {
+    return (
+      <div className="grid grid-cols-2 border border-border">{slotButtons}</div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <div className="flex flex-col gap-1">
+        <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
+          CREDENTIAL SLOT
+        </span>
+        <div className="grid grid-cols-2 border border-border">
+          {slotButtons}
+        </div>
+      </div>
+      <label className="flex flex-col gap-1">
+        <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
+          REGION (BOTH MODES)
+        </span>
+        <select
+          value={region}
+          onChange={(e) =>
+            onRegionChange(e.target.value as "default" | "eea" | "us")
+          }
+          className="border border-border bg-secondary px-2 py-1.5 text-xs text-foreground focus:border-terminal-green/40 focus:outline-none"
+        >
+          <option value="default">Default (global)</option>
+          <option value="eea">EEA</option>
+          <option value="us">US / AU</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function saveErrorMessage(err: unknown): string {
+  return err instanceof Error && err.message.includes("403")
+    ? "FORBIDDEN — operator key required (demo is read-only)"
+    : err instanceof Error
+      ? err.message
+      : "save failed";
+}
+
+function LiveSlotWarning() {
+  return (
+    <div className="flex items-start gap-2 border border-terminal-red/30 bg-terminal-red/5 p-2">
+      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-terminal-red" />
+      <span className="text-[9px] text-muted-foreground leading-relaxed">
+        LIVE slot: paste the API key from your REAL account. Saving makes it
+        active — orders route to real capital. Your demo credentials stay saved
+        and switchable.
+      </span>
+    </div>
+  );
+}
+
+function CredentialSaveRow({
+  confirmLiveSave,
+  fieldsComplete,
+  isPending,
+  onCancelConfirm,
+  onConfirmSave,
+  onRequestSave,
+  saved,
+  slot,
+}: {
+  confirmLiveSave: boolean;
+  fieldsComplete: boolean;
+  isPending: boolean;
+  onCancelConfirm: () => void;
+  onConfirmSave: () => void;
+  onRequestSave: () => void;
+  saved: boolean;
+  slot: "demo" | "live";
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      {slot === "live" && confirmLiveSave ? (
+        <>
+          <span className="flex-1 text-[10px] font-bold text-terminal-red">
+            ROUTE REAL CAPITAL?
+          </span>
+          <button
+            type="button"
+            disabled={isPending || !fieldsComplete}
+            onClick={onConfirmSave}
+            className="flex-1 border border-terminal-red/40 bg-terminal-red/10 py-2 text-[10px] font-bold tracking-wider text-terminal-red transition-colors hover:bg-terminal-red/20 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <KeyRound className="h-3 w-3" />
+            )}
+            CONFIRM — GO LIVE
+          </button>
+          <button
+            type="button"
+            onClick={onCancelConfirm}
+            className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
+          >
+            CANCEL
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          disabled={isPending || !fieldsComplete}
+          onClick={onRequestSave}
+          className="flex flex-1 items-center justify-center gap-2 bg-terminal-green py-2 text-[10px] font-bold tracking-wider text-primary-foreground transition-colors hover:bg-terminal-green/80 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <KeyRound className="h-3 w-3" />
+          )}
+          SAVE &amp; ACTIVATE {slot === "live" ? "LIVE" : "DEMO"}
+        </button>
+      )}
+      {saved && (
+        <span className="flex items-center gap-1 text-[10px] font-bold text-terminal-green">
+          <Check className="h-3 w-3" />
+          SAVED
+        </span>
+      )}
+    </div>
+  );
+}
+
+function BrokerCredentialForm({
+  broker,
+  defaultSlot = "demo",
+  onSaved,
+}: {
+  broker: BrokerAccount;
+  defaultSlot?: "demo" | "live";
+  onSaved: () => void;
+}) {
+  const requiresPassphrase = broker.id === "okx";
   const queryClient = useQueryClient();
   const [apiKey, setApiKey] = useState("");
   const [secret, setSecret] = useState("");
   const [passphrase, setPassphrase] = useState("");
-  const [mode, setMode] = useState<"demo" | "live">("demo");
+  // The slot being saved: demo and live are SEPARATE credential sets —
+  // saving one never touches the other (that is what makes "go live
+  // without killing demo" possible).
+  const [slot, setSlot] = useState<"demo" | "live">(defaultSlot);
   const [region, setRegion] = useState<"default" | "eea" | "us">("default");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // Saving LIVE credentials makes live active immediately (real capital),
+  // so it gets the same explicit confirmation as the mode switch.
+  const [confirmLiveSave, setConfirmLiveSave] = useState(false);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/broker/credentials", {
-        body: JSON.stringify({ apiKey, mode, passphrase, region, secret }),
+      const res = await fetch(brokerUrl("/api/broker/credentials", broker.id), {
+        body: JSON.stringify({
+          apiKey,
+          mode: slot,
+          // Brokers without a passphrase (Alpaca) omit it entirely; the
+          // server stores an empty marker slot instead.
+          passphrase: requiresPassphrase ? passphrase : undefined,
+          region,
+          secret,
+        }),
         headers: {
           "content-type": "application/json",
         },
@@ -134,132 +348,178 @@ function OkxCredentialForm({ onSaved }: { onSaved: () => void }) {
       onSaved();
     },
     onError: (err) => {
-      setError(
-        err instanceof Error && err.message.includes("403")
-          ? "FORBIDDEN — operator key required (demo is read-only)"
-          : err instanceof Error
-            ? err.message
-            : "save failed",
-      );
+      setError(saveErrorMessage(err));
     },
   });
+
+  const fieldsComplete =
+    apiKey.trim().length >= 16 &&
+    secret.trim().length >= 16 &&
+    (!requiresPassphrase || passphrase.trim().length > 0);
 
   // The demo key is read-only server-side (403 on both OKX and LLM
   // credential writes); show why instead of letting the save fail with an
   // opaque error.
   if (isDemoSession()) {
-    return (
-      <div className="flex items-start gap-2 border border-terminal-amber/30 bg-terminal-amber/5 p-2.5">
-        <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-terminal-amber" />
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-bold text-terminal-amber">
-            DEMO MODE — READ ONLY
-          </span>
-          <span className="text-[9px] text-muted-foreground leading-relaxed">
-            Credential management requires an operator API key. Disconnect and
-            sign in with a real key (demo keys cannot store credentials or
-            trigger trading).
-          </span>
-        </div>
-      </div>
-    );
+    return <DemoReadOnlyNotice />;
   }
 
   return (
     <div className="flex flex-col gap-2.5">
       <CredentialField
-        label="API KEY"
-        placeholder="OKX API key"
+        label={`API KEY — ${slot === "live" ? "LIVE" : "DEMO"} SLOT`}
+        placeholder={`${broker.id === "alpaca" ? "Alpaca" : "OKX"} ${slot === "live" ? "live" : "paper"} API key`}
         value={apiKey}
         onChange={setApiKey}
       />
       <CredentialField
-        label="API SECRET"
-        placeholder="OKX secret key"
+        label={`API SECRET — ${slot === "live" ? "LIVE" : "DEMO"} SLOT`}
+        placeholder={
+          slot === "live" ? "Live secret key" : "Demo/paper secret key"
+        }
         type="password"
         value={secret}
         onChange={setSecret}
       />
-      <CredentialField
-        label="PASSPHRASE"
-        placeholder="Passphrase set when creating the key"
-        type="password"
-        value={passphrase}
-        onChange={setPassphrase}
+      {requiresPassphrase ? (
+        <CredentialField
+          label="PASSPHRASE"
+          placeholder="Passphrase set when creating the key"
+          type="password"
+          value={passphrase}
+          onChange={setPassphrase}
+        />
+      ) : (
+        <span className="text-[9px] text-muted-foreground leading-relaxed">
+          Alpaca authenticates with key + secret only — no passphrase or region.
+        </span>
+      )}
+      <SlotSelector
+        slot={slot}
+        onSlotChange={setSlot}
+        requiresPassphrase={requiresPassphrase}
+        region={region}
+        onRegionChange={setRegion}
       />
-      <div className="grid grid-cols-2 gap-2">
-        <label className="flex flex-col gap-1">
-          <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
-            EXECUTION MODE
-          </span>
-          <select
-            value={mode}
-            onChange={(e) => setMode(e.target.value as "demo" | "live")}
-            className="border border-border bg-secondary px-2 py-1.5 text-xs text-foreground focus:border-terminal-green/40 focus:outline-none"
-          >
-            <option value="demo">DEMO — paper endpoints</option>
-            <option value="live">LIVE — real capital</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
-            REGION
-          </span>
-          <select
-            value={region}
-            onChange={(e) =>
-              setRegion(e.target.value as "default" | "eea" | "us")
-            }
-            disabled={mode === "demo"}
-            className="border border-border bg-secondary px-2 py-1.5 text-xs text-foreground disabled:opacity-50 focus:border-terminal-green/40 focus:outline-none"
-          >
-            <option value="default">Default (global)</option>
-            <option value="eea">EEA</option>
-            <option value="us">US / AU</option>
-          </select>
-        </label>
-      </div>
+
+      {slot === "live" && <LiveSlotWarning />}
 
       {error && (
         <span className="text-[10px] font-bold text-terminal-red">{error}</span>
       )}
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled={
-            saveMutation.isPending ||
-            apiKey.trim().length < 16 ||
-            secret.trim().length < 16 ||
-            passphrase.trim().length === 0
+      <CredentialSaveRow
+        confirmLiveSave={confirmLiveSave}
+        fieldsComplete={fieldsComplete}
+        isPending={saveMutation.isPending}
+        onCancelConfirm={() => setConfirmLiveSave(false)}
+        onConfirmSave={() => saveMutation.mutate()}
+        onRequestSave={() => {
+          setError(null);
+          if (slot === "live") {
+            setConfirmLiveSave(true);
+          } else {
+            saveMutation.mutate();
           }
-          onClick={() => saveMutation.mutate()}
-          className="flex flex-1 items-center justify-center gap-2 bg-terminal-green py-2 text-[10px] font-bold tracking-wider text-primary-foreground transition-colors hover:bg-terminal-green/80 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {saveMutation.isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <KeyRound className="h-3 w-3" />
-          )}
-          SAVE &amp; CONNECT
-        </button>
-        {saved && (
-          <span className="flex items-center gap-1 text-[10px] font-bold text-terminal-green">
-            <Check className="h-3 w-3" />
-            SAVED
-          </span>
-        )}
-      </div>
+        }}
+        saved={saved}
+        slot={slot}
+      />
     </div>
   );
 }
 
-function DeleteCredentialsButton({ onDeleted }: { onDeleted: () => void }) {
+/**
+ * Slot-scoped removal: deletes ONE mode's stored credentials (the other
+ * slot and active routing are untouched). The server refuses removing
+ * the ACTIVE slot (409) — that invariant keeps the active routing always
+ * backed by real credentials; full disconnect is the separate button.
+ */
+function SlotRemoveButton({
+  brokerId,
+  onDeleted,
+  slot,
+}: {
+  brokerId: string;
+  onDeleted: () => void;
+  slot: "demo" | "live";
+}) {
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const removeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(
+        brokerUrl(`/api/broker/credentials?mode=${slot}`, brokerId),
+        {
+          method: "DELETE",
+        },
+      );
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(payload?.error ?? `remove failed (${res.status})`);
+      }
+      return true;
+    },
+    onSuccess: () => {
+      setConfirming(false);
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["broker"] });
+      onDeleted();
+    },
+    onError: (err) =>
+      setError(err instanceof Error ? err.message : "remove failed"),
+  });
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        className="text-[9px] font-bold text-muted-foreground transition-colors hover:text-terminal-red"
+      >
+        REMOVE {slot === "live" ? "LIVE" : "DEMO"}
+      </button>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1.5">
+      {error && (
+        <span className="text-[9px] font-bold text-terminal-red">{error}</span>
+      )}
+      <button
+        type="button"
+        disabled={removeMutation.isPending}
+        onClick={() => removeMutation.mutate()}
+        className="border border-terminal-red/40 bg-terminal-red/10 px-1.5 py-0.5 text-[9px] font-bold text-terminal-red hover:bg-terminal-red/20"
+      >
+        CONFIRM
+      </button>
+      <button
+        type="button"
+        onClick={() => setConfirming(false)}
+        className="text-[9px] font-bold text-muted-foreground hover:text-foreground"
+      >
+        CANCEL
+      </button>
+    </span>
+  );
+}
+
+function DeleteCredentialsButton({
+  brokerId,
+  onDeleted,
+}: {
+  brokerId: string;
+  onDeleted: () => void;
+}) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/broker/credentials", {
+      const res = await fetch(brokerUrl("/api/broker/credentials", brokerId), {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -306,7 +566,7 @@ function DeleteCredentialsButton({ onDeleted }: { onDeleted: () => void }) {
   );
 }
 
-// ── Balance sync (ledger reconciliation with the live OKX equity) ────────
+// ── Balance sync (ledger reconciliation with the live broker equity) ─────
 
 interface BrokerBalanceInfo {
   equityUsd: number;
@@ -323,19 +583,21 @@ interface BalanceSyncResult {
 }
 
 /**
- * Reads the live OKX equity (GET) and reconciles the capital ledger with
- * it (POST). The dashboard's TOTAL CAPITAL is derived from the ledger, so
- * without this sync a freshly connected broker shows 0 forever.
+ * Reads the broker's live equity (GET) and reconciles the capital ledger
+ * with it (POST). The dashboard's TOTAL CAPITAL is derived from the ledger,
+ * so without this sync a freshly connected broker shows 0 forever.
  *
- * Gated on the auth probe: while credentials fail OKX authentication the
- * OKX call can only fail, so the row stays dormant (no failed requests on
+ * Gated on the auth probe: while credentials fail authentication the API
+ * call can only fail, so the row stays dormant (no failed requests on
  * mount) and activates/reloads automatically once auth flips healthy —
  * e.g. right after an environment-mismatch mode switch.
  */
-function BalanceSyncRow() {
+function BalanceSyncRow({ brokerId }: { brokerId: string }) {
   const queryClient = useQueryClient();
-  const { serverStatus } = useBroker();
+  const { serverStatuses } = useBroker();
+  const serverStatus = serverStatuses[brokerId] ?? null;
   const authHealthy = serverStatus?.auth?.healthy === true;
+  const currency = BROKER_UI[brokerId]?.currency ?? "USDT";
   const [balance, setBalance] = useState<BrokerBalanceInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BalanceSyncResult | null>(null);
@@ -343,14 +605,18 @@ function BalanceSyncRow() {
   const loadBalance = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch("/api/broker/balance");
+      const res = await fetch(brokerUrl("/api/broker/balance", brokerId));
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as
+          | (BrokerBalanceInfo & { error?: string })
+          | null;
+        throw new Error(body?.error ?? `balance lookup failed (${res.status})`);
+      }
       const payload = (await res.json().catch(() => null)) as
         | (BrokerBalanceInfo & { error?: string })
         | null;
-      if (!res.ok || !payload) {
-        throw new Error(
-          payload?.error ?? `balance lookup failed (${res.status})`,
-        );
+      if (!payload) {
+        throw new Error(`balance lookup failed (${res.status})`);
       }
       setBalance({
         equityUsd: payload.equityUsd,
@@ -361,27 +627,30 @@ function BalanceSyncRow() {
       setBalance(null);
       setError(err instanceof Error ? err.message : "balance lookup failed");
     }
-  }, []);
+  }, [brokerId]);
 
   useEffect(() => {
     if (authHealthy) {
       void loadBalance();
     }
     // Reload when auth flips healthy (mode switch / credential re-save);
-    // the equity read is an authenticated OKX call, so no polling.
+    // the equity read is an authenticated broker call, so no polling.
   }, [authHealthy, loadBalance]);
 
   const syncMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/broker/balance", {
+      const res = await fetch(brokerUrl("/api/broker/balance", brokerId), {
         method: "POST",
       });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as
+          | (BalanceSyncResult & { error?: string })
+          | null;
+        throw new Error(body?.error ?? `sync failed (${res.status})`);
+      }
       const payload = (await res.json().catch(() => null)) as
         | (BalanceSyncResult & { error?: string })
         | null;
-      if (!res.ok) {
-        throw new Error(payload?.error ?? `sync failed (${res.status})`);
-      }
       return payload as BalanceSyncResult;
     },
     onSuccess: (data) => {
@@ -401,18 +670,18 @@ function BalanceSyncRow() {
       ),
   });
 
-  // Dormant while auth is broken: the OKX call can only fail, so show why
-  // instead of a dead button plus console noise.
+  // Dormant while auth is broken: the broker call can only fail, so show
+  // why instead of a dead button plus console noise.
   if (!authHealthy) {
     return (
       <div className="flex flex-col gap-1 border-t border-border pt-2">
         <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
-          BROKER EQUITY (USDT)
+          BROKER EQUITY ({currency})
         </span>
         <span className="text-[9px] text-muted-foreground leading-relaxed">
           {serverStatus?.auth?.okxCode
             ? "Unavailable — fix authentication first (see the warning above)."
-            : "Unavailable — checking OKX authentication…"}
+            : "Unavailable — checking broker authentication…"}
         </span>
       </div>
     );
@@ -422,7 +691,7 @@ function BalanceSyncRow() {
     <div className="flex flex-col gap-1.5 border-t border-border pt-2">
       <div className="flex items-center justify-between">
         <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
-          BROKER EQUITY (USDT)
+          BROKER EQUITY ({currency})
         </span>
         <span className="text-[10px] font-bold text-foreground">
           {balance
@@ -443,7 +712,7 @@ function BalanceSyncRow() {
         >
           {result.delta === 0
             ? "LEDGER ALREADY IN SYNC"
-            : `SYNCED ${result.delta > 0 ? "+" : ""}${result.delta.toFixed(2)} USDT — TOTAL CAPITAL ${result.totalCapital.toLocaleString(
+            : `SYNCED ${result.delta > 0 ? "+" : ""}${result.delta.toFixed(2)} ${currency} — TOTAL CAPITAL ${result.totalCapital.toLocaleString(
                 "en-US",
                 {
                   maximumFractionDigits: 2,
@@ -473,39 +742,45 @@ function BalanceSyncRow() {
 /**
  * Broker configuration panel.
  *
- * Connection state is SERVER-OWNED: OKX is connected when the operator has
- * saved credentials through this panel (stored server-side, encrypted at
- * rest in the broker_credentials table). Plaintext never reaches the
+ * Connection state is SERVER-OWNED: a broker is connected when the operator
+ * has saved credentials through this panel (stored server-side, encrypted
+ * at rest in the broker_credentials table). Plaintext never reaches the
  * browser again after submission — only masked hints.
  */
 /**
- * One-click EXECUTION MODE switch that keeps the stored secrets. OKX's
- * 50101 (key/environment mismatch) is fixed either by switching mode or by
- * re-creating the key — but re-typing all three secrets just to flip mode
- * is unnecessary friction, and the server never returns them.
- *
- * Switching TO live asks for confirmation: that routes orders to real
- * capital.
+ * EXECUTION MODE switch = ACTIVATION of a stored credential slot. Demo
+ * and live credentials live in separate encrypted slots server-side, so
+ * switching never re-types or overwrites anything: demo → live → demo
+ * preserves both setups. Switching TO live asks for confirmation — that
+ * routes orders to real capital. A 409 means the target slot is empty:
+ * save those credentials first (the switch button is disabled for it).
  */
-function ModeSwitchButton({ current }: { current: "live" | "paper" }) {
+function EmptyModeLabel({ current }: { current: "live" | "paper" }) {
+  return (
+    <span className="text-[9px] font-bold text-terminal-amber">
+      {current === "live" ? "LIVE — REAL CAPITAL" : "DEMO — PAPER ENDPOINTS"}
+    </span>
+  );
+}
+
+function useModeSwitch({ brokerId }: { brokerId: string }) {
   const queryClient = useQueryClient();
-  const demoSession = isDemoSession();
   const [confirmingLive, setConfirmingLive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const switchMutation = useMutation({
     mutationFn: async (mode: "demo" | "live") => {
-      const res = await fetch("/api/broker/credentials", {
+      const res = await fetch(brokerUrl("/api/broker/credentials", brokerId), {
         body: JSON.stringify({ mode }),
         headers: {
           "content-type": "application/json",
         },
         method: "PATCH",
       });
-      const payload = (await res.json().catch(() => null)) as {
-        error?: string;
-      } | null;
       if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(payload?.error ?? `mode switch failed (${res.status})`);
       }
       return true;
@@ -527,12 +802,106 @@ function ModeSwitchButton({ current }: { current: "live" | "paper" }) {
       ),
   });
 
-  if (demoSession) {
-    return (
-      <span className="text-[9px] font-bold text-terminal-amber">
+  return { confirmingLive, setConfirmingLive, error, setError, switchMutation };
+}
+
+function ConfirmLiveActions({
+  isPending,
+  onCancel,
+  onConfirm,
+}: {
+  isPending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <span className="text-[9px] font-bold text-terminal-red">
+        REAL CAPITAL?
+      </span>
+      <button
+        type="button"
+        disabled={isPending}
+        onClick={onConfirm}
+        className="border border-terminal-red/40 bg-terminal-red/10 px-2 py-0.5 text-[9px] font-bold text-terminal-red hover:bg-terminal-red/20"
+      >
+        CONFIRM LIVE
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="text-[9px] font-bold text-muted-foreground hover:text-foreground"
+      >
+        CANCEL
+      </button>
+    </>
+  );
+}
+
+function SwitchModeTrigger({
+  current,
+  isPending,
+  onSwitch,
+  targetMode,
+  targetSlotReady,
+}: {
+  current: "live" | "paper";
+  isPending: boolean;
+  onSwitch: () => void;
+  targetMode: "demo" | "live";
+  targetSlotReady: boolean;
+}) {
+  const actionLabel = isPending
+    ? "…"
+    : targetMode === "live"
+      ? "SWITCH TO LIVE"
+      : "SWITCH TO DEMO";
+  return (
+    <>
+      <span
+        className={`text-[9px] font-bold ${current === "live" ? "text-terminal-red" : "text-terminal-amber"}`}
+      >
         {current === "live" ? "LIVE — REAL CAPITAL" : "DEMO — PAPER ENDPOINTS"}
       </span>
-    );
+      <button
+        type="button"
+        disabled={isPending || !targetSlotReady}
+        title={
+          targetSlotReady
+            ? undefined
+            : `no ${targetMode} credentials stored — save them first`
+        }
+        onClick={onSwitch}
+        className="border border-border bg-secondary px-2 py-0.5 text-[9px] font-bold text-muted-foreground transition-colors enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {actionLabel}
+      </button>
+    </>
+  );
+}
+
+function ModeSwitchButton({
+  brokerId,
+  requiresPassphrase,
+  current,
+  serverStatus,
+  targetSlotReady,
+}: {
+  brokerId: string;
+  requiresPassphrase: boolean;
+  current: "live" | "paper";
+  serverStatus: BrokerServerStatus | null;
+  targetSlotReady: boolean;
+}) {
+  const demoSession = isDemoSession();
+  const { confirmingLive, setConfirmingLive, error, setError, switchMutation } =
+    useModeSwitch({ brokerId });
+
+  if (demoSession || serverStatus === null) {
+    return <EmptyModeLabel current={current} />;
+  }
+  if (requiresPassphrase && serverStatus.slots === undefined) {
+    return <EmptyModeLabel current={current} />;
   }
 
   const targetMode: "demo" | "live" = current === "live" ? "demo" : "live";
@@ -543,57 +912,230 @@ function ModeSwitchButton({ current }: { current: "live" | "paper" }) {
         <span className="text-[9px] font-bold text-terminal-red">{error}</span>
       )}
       {confirmingLive ? (
-        <>
-          <span className="text-[9px] font-bold text-terminal-red">
-            REAL CAPITAL?
-          </span>
-          <button
-            type="button"
-            disabled={switchMutation.isPending}
-            onClick={() => switchMutation.mutate("live")}
-            className="border border-terminal-red/40 bg-terminal-red/10 px-2 py-0.5 text-[9px] font-bold text-terminal-red hover:bg-terminal-red/20"
-          >
-            CONFIRM LIVE
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirmingLive(false)}
-            className="text-[9px] font-bold text-muted-foreground hover:text-foreground"
-          >
-            CANCEL
-          </button>
-        </>
+        <ConfirmLiveActions
+          isPending={switchMutation.isPending}
+          onCancel={() => setConfirmingLive(false)}
+          onConfirm={() => switchMutation.mutate("live")}
+        />
       ) : (
-        <>
-          <span
-            className={`text-[9px] font-bold ${current === "live" ? "text-terminal-red" : "text-terminal-amber"}`}
-          >
-            {current === "live"
-              ? "LIVE — REAL CAPITAL"
-              : "DEMO — PAPER ENDPOINTS"}
-          </span>
-          <button
-            type="button"
-            disabled={switchMutation.isPending}
-            onClick={() => {
-              setError(null);
-              if (targetMode === "live") {
-                setConfirmingLive(true);
-              } else {
-                switchMutation.mutate("demo");
-              }
-            }}
-            className="border border-border bg-secondary px-2 py-0.5 text-[9px] font-bold text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {switchMutation.isPending
-              ? "…"
-              : targetMode === "live"
-                ? "SWITCH TO LIVE"
-                : "SWITCH TO DEMO"}
-          </button>
-        </>
+        <SwitchModeTrigger
+          current={current}
+          isPending={switchMutation.isPending}
+          onSwitch={() => {
+            setError(null);
+            if (targetMode === "live") {
+              setConfirmingLive(true);
+            } else {
+              switchMutation.mutate("demo");
+            }
+          }}
+          targetMode={targetMode}
+          targetSlotReady={targetSlotReady}
+        />
       )}
     </span>
+  );
+}
+
+/** Broker-scoped slot completeness (passphrase only counts when used). */
+function slotComplete(
+  slot: { apiKeySet: boolean; passphraseSet: boolean; secretSet: boolean },
+  requiresPassphrase: boolean,
+): boolean {
+  return (
+    slot.apiKeySet &&
+    slot.secretSet &&
+    (slot.passphraseSet || !requiresPassphrase)
+  );
+}
+
+function slotDefault(serverStatus: BrokerServerStatus): {
+  apiKeySet: boolean;
+  passphraseSet: boolean;
+  secretSet: boolean;
+} {
+  return {
+    apiKeySet: serverStatus.credentials.apiKey,
+    passphraseSet:
+      serverStatus.credentials.passphrase ||
+      serverStatus.requiresPassphrase === false,
+    secretSet: serverStatus.credentials.secret,
+  };
+}
+
+function StoredCredentialsBlock({
+  broker,
+  requiresPassphrase,
+  serverStatus,
+  onClose,
+}: {
+  broker: BrokerAccount;
+  requiresPassphrase: boolean;
+  serverStatus: BrokerServerStatus | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const shortName = broker.shortName;
+  // When no credentials are stored yet, open straight into the form.
+  const [showForm, setShowForm] = useState(!serverStatus?.credentials.apiKey);
+
+  const refreshStatus = () => {
+    queryClient.invalidateQueries({ queryKey: ["broker"] });
+  };
+
+  return (
+    <>
+      {serverStatus ? (
+        <div className="flex flex-col gap-1.5 border border-border bg-secondary/50 p-2">
+          <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
+            STORED CREDENTIALS — BOTH MODES KEPT SEPARATELY
+          </span>
+          {(
+            [
+              [
+                "DEMO",
+                serverStatus.slots?.demo ?? slotDefault(serverStatus),
+                serverStatus.mode === "paper",
+              ],
+              [
+                "LIVE",
+                serverStatus.slots?.live ?? {
+                  apiKeySet: false,
+                  passphraseSet: false,
+                  secretSet: false,
+                },
+                serverStatus.mode === "live",
+              ],
+            ] as const
+          ).map(([label, slot, active]) => {
+            const complete = slotComplete(slot, requiresPassphrase);
+            return (
+              <div
+                key={label}
+                className={`flex items-center justify-between border px-2 py-1.5 ${
+                  active
+                    ? label === "LIVE"
+                      ? "border-terminal-red/40 bg-terminal-red/5"
+                      : "border-terminal-green/40 bg-terminal-green/5"
+                    : "border-border"
+                }`}
+              >
+                <div className="flex flex-col">
+                  <span
+                    className={`text-[10px] font-bold ${
+                      label === "LIVE" && complete
+                        ? "text-terminal-red"
+                        : complete
+                          ? "text-terminal-green"
+                          : "text-terminal-dim"
+                    }`}
+                  >
+                    {label}
+                    {active ? " — ACTIVE" : ""}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground">
+                    {complete
+                      ? "credentials stored"
+                      : "not saved — save them in the form below"}
+                  </span>
+                </div>
+                {complete && !active && (
+                  <SlotRemoveButton
+                    onDeleted={refreshStatus}
+                    slot={label === "LIVE" ? "live" : "demo"}
+                    brokerId={broker.id}
+                  />
+                )}
+              </div>
+            );
+          })}
+          <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
+            <span className="text-[10px] text-foreground">EXECUTION MODE</span>
+            <ModeSwitchButton
+              brokerId={broker.id}
+              requiresPassphrase={requiresPassphrase}
+              current={serverStatus.mode}
+              serverStatus={serverStatus}
+              targetSlotReady={
+                serverStatus.mode === "live"
+                  ? slotComplete(
+                      serverStatus.slots?.demo ?? slotDefault(serverStatus),
+                      requiresPassphrase,
+                    )
+                  : slotComplete(
+                      serverStatus.slots?.live ?? {
+                        apiKeySet: false,
+                        passphraseSet: false,
+                        secretSet: false,
+                      },
+                      requiresPassphrase,
+                    )
+              }
+            />
+          </div>
+          {/* Active auth probe: stored ≠ working. A configured set that
+              fails authentication shows the broker's error code plus the
+              operator-facing fix instead of failing silently later. */}
+          {serverStatus.auth && !serverStatus.auth.healthy && (
+            <div className="mt-1 flex items-start gap-2 border border-terminal-red/30 bg-terminal-red/5 p-2">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-terminal-red" />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-bold text-terminal-red">
+                  {serverStatus.auth.okxCode
+                    ? `AUTH FAILED — ${shortName} ${serverStatus.auth.okxCode}`
+                    : "AUTH CHECK UNAVAILABLE"}
+                </span>
+                {serverStatus.auth.hint && (
+                  <span className="text-[9px] text-muted-foreground leading-relaxed">
+                    {serverStatus.auth.hint}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          {serverStatus.auth?.healthy && (
+            <span className="text-[9px] font-bold text-terminal-green">
+              ✓ AUTHENTICATED WITH {shortName}
+            </span>
+          )}
+          {!showForm && (
+            <div className="mt-1 flex gap-2 border-t border-border pt-1.5">
+              <button
+                type="button"
+                onClick={() => setShowForm(true)}
+                className="flex-1 border border-border bg-secondary py-1 text-[9px] font-bold tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+              >
+                UPDATE CREDENTIALS
+              </button>
+              <DeleteCredentialsButton
+                brokerId={broker.id}
+                onDeleted={() => {
+                  setShowForm(false);
+                  onClose();
+                }}
+              />
+            </div>
+          )}
+          <BalanceSyncRow brokerId={broker.id} />
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 border border-border bg-secondary/50 p-2 text-[10px] text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Checking server configuration…
+        </div>
+      )}
+
+      {/* Credential entry form */}
+      {showForm && (
+        <BrokerCredentialForm
+          broker={broker}
+          onSaved={() => {
+            setShowForm(false);
+            refreshStatus();
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -604,17 +1146,16 @@ function BrokerConfigPanel({
   broker: BrokerAccount;
   onClose: () => void;
 }) {
-  const { serverStatus, connectionStatus, setTradingEnabled } = useBroker();
-  const queryClient = useQueryClient();
+  const {
+    serverStatuses,
+    connectionStatus,
+    setActiveBroker,
+    setTradingEnabled,
+  } = useBroker();
   const status = connectionStatus(broker.id);
-  const isOkx = broker.id === "okx";
+  const serverStatus = serverStatuses[broker.id] ?? null;
+  const requiresPassphrase = broker.id === "okx";
   const isEnabled = broker.tradingEnabled;
-  // When no credentials are stored yet, open straight into the form.
-  const [showForm, setShowForm] = useState(!serverStatus?.credentials.apiKey);
-
-  const refreshStatus = () => {
-    queryClient.invalidateQueries({ queryKey: ["broker"] });
-  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -642,112 +1183,19 @@ function BrokerConfigPanel({
           </span>
           <span className="text-[9px] text-muted-foreground leading-relaxed">
             Credentials are encrypted (AES-256-GCM) in the server database and
-            never returned to the browser after submission. Demo mode routes
-            through OKX paper endpoints; live mode trades real capital.
+            never returned to the browser after submission. The ACTIVE broker is
+            decided server-side and enforced by the execution pipeline.
           </span>
         </div>
       </div>
 
-      {/* OKX credential truth from the server */}
-      {isOkx &&
-        (serverStatus ? (
-          <div className="flex flex-col gap-1.5 border border-border bg-secondary/50 p-2">
-            <span className="text-[9px] font-bold tracking-wider text-muted-foreground">
-              STORED CREDENTIALS
-            </span>
-            {(
-              [
-                ["API Key", serverStatus.credentials.apiKey],
-                ["API Secret", serverStatus.credentials.secret],
-                ["API Passphrase", serverStatus.credentials.passphrase],
-              ] as const
-            ).map(([label, set]) => (
-              <div key={label} className="flex items-center justify-between">
-                <span className="text-[10px] text-foreground">{label}</span>
-                <span
-                  className={`text-[9px] font-bold ${set ? "text-terminal-green" : "text-terminal-dim"}`}
-                >
-                  {set ? "CONFIGURED" : "NOT SET"}
-                </span>
-              </div>
-            ))}
-            <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
-              <span className="text-[10px] text-foreground">
-                EXECUTION MODE
-              </span>
-              <ModeSwitchButton current={serverStatus.mode} />
-            </div>
-            {/* Active auth probe: stored ≠ working. A configured set that
-                fails OKX authentication shows the exchange's error code plus
-                the operator-facing fix instead of failing silently later. */}
-            {serverStatus.auth && !serverStatus.auth.healthy && (
-              <div className="mt-1 flex items-start gap-2 border border-terminal-red/30 bg-terminal-red/5 p-2">
-                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-terminal-red" />
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[9px] font-bold text-terminal-red">
-                    {serverStatus.auth.okxCode
-                      ? `AUTH FAILED — OKX ${serverStatus.auth.okxCode}`
-                      : "AUTH CHECK UNAVAILABLE"}
-                  </span>
-                  {serverStatus.auth.hint && (
-                    <span className="text-[9px] text-muted-foreground leading-relaxed">
-                      {serverStatus.auth.hint}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-            {serverStatus.auth?.healthy && (
-              <span className="text-[9px] font-bold text-terminal-green">
-                ✓ AUTHENTICATED WITH OKX
-              </span>
-            )}
-            {!showForm && (
-              <div className="mt-1 flex gap-2 border-t border-border pt-1.5">
-                <button
-                  type="button"
-                  onClick={() => setShowForm(true)}
-                  className="flex-1 border border-border bg-secondary py-1 text-[9px] font-bold tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  UPDATE CREDENTIALS
-                </button>
-                <DeleteCredentialsButton
-                  onDeleted={() => {
-                    setShowForm(false);
-                    onClose();
-                  }}
-                />
-              </div>
-            )}
-            <BalanceSyncRow />
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 border border-border bg-secondary/50 p-2 text-[10px] text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Checking server configuration…
-          </div>
-        ))}
-
-      {/* Credential entry form */}
-      {isOkx && showForm && (
-        <OkxCredentialForm
-          onSaved={() => {
-            setShowForm(false);
-            refreshStatus();
-          }}
-        />
-      )}
-
-      {/* Non-wired adapters stay honest */}
-      {!isOkx && (
-        <div className="flex items-start gap-2 border border-border bg-secondary/50 p-2.5">
-          <CircleSlash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-terminal-dim" />
-          <span className="text-[9px] text-muted-foreground leading-relaxed">
-            No broker adapter is wired for this entry yet. Equity symbols always
-            execute on the paper book.
-          </span>
-        </div>
-      )}
+      {/* Broker credential truth from the server + credential entry form */}
+      <StoredCredentialsBlock
+        broker={broker}
+        requiresPassphrase={requiresPassphrase}
+        serverStatus={serverStatus}
+        onClose={onClose}
+      />
 
       {/* Operator toggle — the only client-controlled state */}
       <button
@@ -770,6 +1218,22 @@ function BrokerConfigPanel({
             : "ENABLE TRADING ON THIS BROKER"}
       </button>
 
+      {/* Active routing indicator + switch */}
+      {status === "connected" && isEnabled && (
+        <button
+          type="button"
+          onClick={() => {
+            void setActiveBroker(broker.id);
+            onClose();
+          }}
+          className="flex items-center justify-center gap-2 border border-terminal-cyan/40 bg-terminal-cyan/5 py-1.5 text-[10px] font-bold tracking-wider text-terminal-cyan transition-colors hover:bg-terminal-cyan/10"
+        >
+          {" "}
+          <CircleSlash className="h-3 w-3" />
+          ROUTE ORDERS THROUGH THIS BROKER
+        </button>
+      )}
+
       {/* Close */}
       <button
         type="button"
@@ -783,7 +1247,8 @@ function BrokerConfigPanel({
 }
 
 export function ActiveBrokerSwitcher() {
-  const { activeBroker, connectedBrokers, setActiveBroker } = useBroker();
+  const { activeBroker, activeBrokerId, connectedBrokers, setActiveBroker } =
+    useBroker();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -826,13 +1291,13 @@ export function ActiveBrokerSwitcher() {
             </span>
           </div>
           {connectedBrokers.map((b) => {
-            const active = activeBroker?.id === b.id;
+            const active = (activeBroker?.id ?? activeBrokerId) === b.id;
             return (
               <button
                 type="button"
                 key={b.id}
                 onClick={() => {
-                  setActiveBroker(b.id);
+                  void setActiveBroker(b.id);
                   setOpen(false);
                 }}
                 className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors ${
@@ -862,8 +1327,13 @@ export function ActiveBrokerSwitcher() {
 }
 
 export function BrokerAccountsSection() {
-  const { brokers, activeBrokerId, setActiveBroker, connectionStatus } =
-    useBroker();
+  const {
+    activeBroker,
+    activeBrokerId,
+    setActiveBroker,
+    connectionStatus,
+    brokers,
+  } = useBroker();
   const [open, setOpen] = useState(false);
   const [configuringBrokerId, setConfiguringBroker] = useState<string | null>(
     null,
@@ -889,6 +1359,8 @@ export function BrokerAccountsSection() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const activeLabelId = activeBroker?.id ?? activeBrokerId ?? "okx";
+
   return (
     <div className="flex flex-col gap-4">
       {/* Inline row: label + dropdown */}
@@ -908,8 +1380,8 @@ export function BrokerAccountsSection() {
             className="flex items-center gap-2 border border-border bg-secondary px-3 py-1 text-xs text-foreground hover:border-terminal-green/40 transition-colors"
           >
             <span className="flex items-center gap-1.5">
-              <ConnectionDot id="okx" />
-              <span>OKX / PAPER</span>
+              <ConnectionDot id={activeLabelId} />
+              <span>{activeBroker?.shortName ?? "OKX / PAPER"}</span>
             </span>
             <ChevronDown
               className={`h-3 w-3 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
@@ -918,7 +1390,7 @@ export function BrokerAccountsSection() {
           {open && (
             <div className="absolute right-0 top-full z-50 mt-1 min-w-55 border border-border bg-card shadow-lg shadow-black/40">
               {brokers.map((broker) => {
-                const isActive = broker.id === activeBrokerId;
+                const isActive = broker.id === activeLabelId;
                 const status = connectionStatus(broker.id);
                 return (
                   <button
@@ -926,7 +1398,7 @@ export function BrokerAccountsSection() {
                     key={broker.id}
                     onClick={() => {
                       if (status === "connected" && broker.tradingEnabled) {
-                        setActiveBroker(broker.id);
+                        void setActiveBroker(broker.id);
                         setOpen(false);
                       } else {
                         setConfiguringBroker(broker.id);

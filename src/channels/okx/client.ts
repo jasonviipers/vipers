@@ -46,7 +46,7 @@ export class OKXApiError extends Error {
   }
 }
 
-export class OKXClient {
+class OKXClient {
   private async buildUrl(path: string): Promise<string> {
     const config = await createOKXConfig();
     return `${config.restBaseUrl}${path}`;
