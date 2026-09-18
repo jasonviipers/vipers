@@ -107,3 +107,10 @@ export interface AlpacaEquityLatestBarResponse {
   bar: AlpacaBar | null;
   symbol: string;
 }
+
+/** Paginated historical-bars response (equities v2 / crypto v1beta3). */
+export interface AlpacaHistoricalBarsResponse {
+  bars: AlpacaBar[] | null;
+  next_page_token?: string | null;
+  symbol: string;
+}

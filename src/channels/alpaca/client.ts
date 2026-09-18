@@ -6,6 +6,7 @@ import type {
   AlpacaCryptoLatestBarsResponse,
   AlpacaEquityLatestBarResponse,
   AlpacaErrorPayload,
+  AlpacaHistoricalBarsResponse,
   AlpacaOrder,
   AlpacaOrderRequest,
   AlpacaPosition,
@@ -171,6 +172,50 @@ class AlpacaClient {
       return [position];
     }
     return this.request<AlpacaPosition[]>("GET", "/v2/positions");
+  }
+
+  /**
+   * Historical bars for a symbol over [start, end] (epoch ms), following
+   * pagination to exhaustion. Equities use the stocks v2 bars endpoint;
+   * crypto (slash-prefixed symbols) use the v1beta3 crypto bars endpoint —
+   * the same split as getLatestPrice. Bars come back ascending by time.
+   * Feeds the point-in-time backtest dataset (src/lib/jobs/pit-ingestion-job.ts).
+   */
+  async getHistoricalBars(
+    symbol: string,
+    startMs: number,
+    endMs: number,
+    timeframe = "1Hour",
+  ): Promise<AlpacaBar[]> {
+    const all: AlpacaBar[] = [];
+    let pageToken: string | undefined;
+    const isCrypto = symbol.includes("/");
+    do {
+      const query: Record<string, string> = {
+        end: new Date(endMs).toISOString(),
+        start: new Date(startMs).toISOString(),
+        timeframe,
+      };
+      if (pageToken) {
+        query.page_token = pageToken;
+      }
+      const res = isCrypto
+        ? await this.request<AlpacaHistoricalBarsResponse>(
+            "GET",
+            `/v1beta3/crypto/${encodeURIComponent(symbol)}/bars`,
+            { baseUrl: "data", query },
+          )
+        : await this.request<AlpacaHistoricalBarsResponse>(
+            "GET",
+            `/v2/stocks/${encodeURIComponent(symbol)}/bars`,
+            { baseUrl: "data", query: { ...query, feed: "sip" } },
+          );
+      if (res.bars) {
+        all.push(...res.bars);
+      }
+      pageToken = res.next_page_token ?? undefined;
+    } while (pageToken);
+    return all;
   }
 
   /**
