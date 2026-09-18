@@ -33,13 +33,6 @@ export const agents = pgTable("agents", {
   team: teamEnum("team").notNull(),
 });
 
-// pnl/roi/winRate/trades/sharpe/maxDrawdown are DERIVED from positions,
-// not raw facts — cache them here and recompute on trade close / on a cron,
-// rather than trying to keep them live on every read.
-//
-// score: the leaderboard composite, persisted by the leaderboard-score job
-// (same cron philosophy: derived, not live). Nullable until the first job
-// run — the UI treats null as "provisional, ranked by the live heuristic".
 export const agentStats = pgTable("agent_stats", {
   agentId: text("agent_id")
     .primaryKey()
