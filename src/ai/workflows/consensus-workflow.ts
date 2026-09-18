@@ -1,6 +1,7 @@
 import {
   buildDecisionMetadata,
   type DecisionMetadata,
+  type DecisionOutcome,
   type DecisionSnapshot,
   persistDecisionSnapshot,
   snapshotInputsForSignal,
@@ -21,6 +22,7 @@ import {
   registerStrategyPluginSource,
   runRegisteredStrategyPlugin,
 } from "@/ai/capital-engine/strategy-registry";
+import { log } from "@/lib/evlog";
 import {
   getLatestPromotionRecord,
   registerStrategyPlugin,
@@ -40,6 +42,7 @@ import {
 } from "../events/contracts";
 import { placeOrder } from "../tools/execution-tool";
 import { fetchMarketSignals } from "../tools/market-signals-tool";
+import type { RiskEvaluation } from "../tools/risk-tool";
 import { evaluateProposalRiskServer } from "../tools/risk-tool";
 import { fetchTechnicals } from "../tools/technical-analysis-tool";
 
@@ -70,6 +73,41 @@ export interface ConsensusWorkflowResult {
  */
 function proposalIdBasis(input: ConsensusWorkflowInput): string {
   return `wf:${input.asset}:${input.source}`;
+}
+
+/**
+ * Stages where the workflow must run the full pipeline but suppress the
+ * broker submission (checklist §7 — shadow mode with zero orders). Only
+ * SHADOW today; a predicate so future observation-only stages reuse the
+ * same evidence path.
+ */
+export function isShadowSuppressedStage(stage: string | undefined): boolean {
+  return stage === "SHADOW";
+}
+
+/**
+ * The persisted outcome for a shadow-suppressed run: the REAL risk
+ * evaluation is preserved verbatim (approved flag, size, kernel reason) so
+ * the SHADOW→PAPER evidence shows what the system would have done, with an
+ * explicit suppression prefix — a shadow record must never be mistaken for
+ * a block the risk kernel itself issued.
+ */
+export function buildShadowDecisionOutcome(
+  risk: RiskEvaluation,
+): DecisionOutcome {
+  return {
+    blocked: true,
+    order: null,
+    risk: {
+      approved: risk.approved,
+      positionSizePct: risk.positionSizePct,
+      reason: `SHADOW MODE — order suppressed (would have ${
+        risk.approved
+          ? `executed ${risk.positionSizePct}% of book`
+          : "been refused"
+      }): ${risk.reason}`,
+    },
+  };
 }
 
 export async function runConsensusWorkflow(
@@ -349,6 +387,39 @@ export async function runConsensusWorkflow(
       },
       proposalId: proposal.proposalId,
       signalId: signal.signalId,
+    });
+    return { order: { asset: proposal.asset, orderId: "", status: "BLOCKED" } };
+  }
+
+  // Shadow mode (checklist §7): a plugin whose lineage head is at SHADOW
+  // runs the FULL pipeline on live data — real signal, isolated plugin
+  // execution, capital intent, and the real risk verdict above — but never
+  // reaches the broker. The suppressed outcome is persisted as the
+  // SHADOW→PAPER promotion evidence: what the plugin WOULD have done, with
+  // zero orders existing for the run.
+  if (isShadowSuppressedStage(headRecord?.stage)) {
+    await persistDecisionSnapshot({
+      asset: proposal.asset,
+      inputs: {
+        ...decisionInputs,
+        consensus: {
+          ...decisionInputs.consensus,
+          quorum: threshold * 100,
+          votesAgainst,
+          votesFor,
+        },
+      },
+      intentHash,
+      metadata,
+      outcome: buildShadowDecisionOutcome(risk),
+      proposalId: proposal.proposalId,
+      signalId: signal.signalId,
+    });
+    log.info({
+      audit: "shadow_order_suppressed",
+      headStage: headRecord?.stage,
+      pluginId: CONSENSUS_PLUGIN_MANIFEST.pluginId,
+      riskApproved: risk.approved,
     });
     return { order: { asset: proposal.asset, orderId: "", status: "BLOCKED" } };
   }
