@@ -41,6 +41,21 @@ export interface RuntimeSettings {
   automationEnabled: boolean;
   /** Seconds between automatic full-pipeline passes (bounded 60–3600). */
   automationIntervalSec: number;
+  /**
+   * CANARY loss budget (percent of total capital). Tightens the automatic
+   * rollback loss threshold for CANARY-stage lineage heads (the effective
+   * threshold is the tighter of this and rollbackMaxLossPct); ignored for
+   * LIVE. Null = no canary-specific budget is predeclared.
+   */
+  canaryLossBudgetPct: number | null;
+  /**
+   * CANARY per-order allocation cap (percent of book) enforced by the risk
+   * gate for plugins whose lineage head is at CANARY. Null = not armed —
+   * new risk for canary plugins is then REFUSED (fail closed) rather than
+   * allowed at live sizing, because canary capital must be explicitly
+   * bounded before it trades.
+   */
+  canaryMaxAllocationPct: number | null;
   consensusQuorum: number;
   debugMode: boolean;
   /** Seconds; drives the agent online-window (interval × 3, bounded). */
@@ -62,6 +77,8 @@ const RUNTIME_SETTINGS_DEFAULTS: RuntimeSettings = {
   activeBrokerId: ACTIVE_BROKER_DEFAULT,
   automationEnabled: false,
   automationIntervalSec: 300,
+  canaryLossBudgetPct: null,
+  canaryMaxAllocationPct: null,
   consensusQuorum: 50,
   debugMode: false,
   defaultLlmProvider: "GOOGLE",
@@ -76,6 +93,14 @@ export const runtimeSettingsSchema = z.object({
   activeBrokerId: z.enum(["okx", "alpaca"]).optional(),
   automationEnabled: z.boolean().optional(),
   automationIntervalSec: z.number().int().min(60).max(3600).optional(),
+  canaryLossBudgetPct: z.number().int().min(1).max(100).nullable().optional(),
+  canaryMaxAllocationPct: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .nullable()
+    .optional(),
   consensusQuorum: z.number().int().min(30).max(100).optional(),
   debugMode: z.boolean().optional(),
   defaultLlmProvider: z
@@ -112,6 +137,8 @@ export async function getRuntimeSettings(): Promise<RuntimeSettings> {
       automationIntervalSec:
         row.automationIntervalSec ??
         RUNTIME_SETTINGS_DEFAULTS.automationIntervalSec,
+      canaryLossBudgetPct: row.canaryLossBudgetPct ?? null,
+      canaryMaxAllocationPct: row.canaryMaxAllocationPct ?? null,
       consensusQuorum:
         row.consensusQuorum ?? RUNTIME_SETTINGS_DEFAULTS.consensusQuorum,
       debugMode: row.debugMode,
@@ -194,6 +221,8 @@ export async function updateRuntimeSettings(
       activeBrokerId: next.activeBrokerId,
       automationEnabled: next.automationEnabled,
       automationIntervalSec: next.automationIntervalSec,
+      canaryLossBudgetPct: next.canaryLossBudgetPct,
+      canaryMaxAllocationPct: next.canaryMaxAllocationPct,
       consensusQuorum: next.consensusQuorum,
       debugMode: next.debugMode,
       defaultLlmProvider: next.defaultLlmProvider,
@@ -211,6 +240,8 @@ export async function updateRuntimeSettings(
         activeBrokerId: next.activeBrokerId,
         automationEnabled: next.automationEnabled,
         automationIntervalSec: next.automationIntervalSec,
+        canaryLossBudgetPct: next.canaryLossBudgetPct,
+        canaryMaxAllocationPct: next.canaryMaxAllocationPct,
         consensusQuorum: next.consensusQuorum,
         debugMode: next.debugMode,
         defaultLlmProvider: next.defaultLlmProvider,

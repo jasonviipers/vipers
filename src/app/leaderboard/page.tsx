@@ -7,13 +7,13 @@ export const metadata: Metadata = {
   description:
     "Agent performance rankings with competition standings, champion stats, win rate comparisons, and historical equity curves for all trading agents.",
   alternates: {
-    canonical: "https://quantex.app/leaderboard",
+    canonical: "https://viipers.com/leaderboard",
   },
   openGraph: {
-    title: "Leaderboard | QuantEx",
+    title: "Leaderboard | viipers",
     description:
       "Agent performance rankings with competition standings and historical equity curves.",
-    url: "https://quantex.app/leaderboard",
+    url: "https://viipers.com/leaderboard",
   },
 };
 

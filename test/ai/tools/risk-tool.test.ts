@@ -51,6 +51,62 @@ describe("evaluateProposalRisk", () => {
     expect(result.positionSizePct).toBe(0);
   });
 
+  it("refuses a CANARY head outright when no allocation cap is armed", () => {
+    const result = evaluateProposalRisk(
+      { asset: "BTC-USD", confidence: 0.9 },
+      BASE_LIMITS,
+      ctx({ canaryMaxAllocationPct: null, headStage: "CANARY" }),
+    );
+    expect(result.approved).toBe(false);
+    expect(result.positionSizePct).toBe(0);
+    expect(result.reason).toContain("Canary allocation cap is not configured");
+  });
+
+  it("refuses a CANARY order above the predeclared allocation cap", () => {
+    // proposedPositionPct 4% vs a 2% canary cap.
+    const result = evaluateProposalRisk(
+      {
+        asset: "BTC-USD",
+        confidence: 0.9,
+        proposedPositionPct: 4,
+      },
+      BASE_LIMITS,
+      ctx({ canaryMaxAllocationPct: 2, headStage: "CANARY" }),
+    );
+    expect(result.approved).toBe(false);
+    expect(result.reason).toContain("exceeds the 2% cap");
+  });
+
+  it("clamps a CANARY order's confidence-scaled size under the cap", () => {
+    // Without the cap, 0.9 confidence would scale to 4.5% of book.
+    const result = evaluateProposalRisk(
+      { asset: "BTC-USD", confidence: 0.9 },
+      BASE_LIMITS,
+      ctx({ canaryMaxAllocationPct: 2, headStage: "CANARY" }),
+    );
+    expect(result.approved).toBe(true);
+    expect(result.positionSizePct).toBe(2);
+  });
+
+  it("leaves LIVE-head and lineage-less proposals uncapped by canary rules", () => {
+    const live = evaluateProposalRisk(
+      { asset: "BTC-USD", confidence: 0.9 },
+      BASE_LIMITS,
+      ctx({ canaryMaxAllocationPct: 2, headStage: "LIVE" }),
+    );
+    expect(live.approved).toBe(true);
+    expect(live.positionSizePct).toBe(4.5);
+
+    // No promotion lineage yet — not treated as a canary.
+    const noLineage = evaluateProposalRisk(
+      { asset: "BTC-USD", confidence: 0.9 },
+      BASE_LIMITS,
+      ctx({ canaryMaxAllocationPct: 2 }),
+    );
+    expect(noLineage.approved).toBe(true);
+    expect(noLineage.positionSizePct).toBe(4.5);
+  });
+
   it("kill switch rejects before any other rule", () => {
     const result = evaluateProposalRisk(
       { asset: "BTC-USD", confidence: 1 },

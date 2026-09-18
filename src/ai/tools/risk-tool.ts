@@ -39,6 +39,15 @@ export interface RiskEvaluation {
 }
 
 export interface RiskGateContext {
+  /**
+   * CANARY per-order allocation cap (percent of book) armed by the
+   * operator (canaryMaxAllocationPct runtime setting). When headStage is
+   * CANARY this caps the order's position size; when it is CANARY and
+   * this is null the proposal is REFUSED (fail closed — canary capital
+   * must be explicitly bounded before it trades). Ignored for other
+   * stages.
+   */
+  canaryMaxAllocationPct?: number | null;
   /** Armed kill switch blocks new exposure; protective reductions may pass. */
   killSwitchEnabled: boolean;
   currentConcentrationPct?: number;
@@ -49,6 +58,12 @@ export interface RiskGateContext {
   spreadBps?: number;
   /** Realized P&L so far today (realized_pnl − fees), currency units. */
   dailyRealizedPnl: number;
+  /**
+   * The proposing plugin's current lineage-head stage (e.g. "CANARY",
+   * "LIVE"). Empty when the proposer has no promotion lineage yet — such
+   * a proposer is NOT treated as a canary and is not allocation-capped.
+   */
+  headStage?: string;
   /** Current total capital, currency units (denominator for the loss cap). */
   totalCapital: number;
   /** Currently OPEN position count (operator cap from runtime settings). */
@@ -241,6 +256,28 @@ export function evaluateProposalRisk(
     };
   }
 
+  // 2c. Canary allocation cap (checklist §7). A plugin whose lineage head
+  //     is at CANARY trades under an explicitly predeclared per-order
+  //     ceiling; with no ceiling armed the canary does not trade at all —
+  //     canary sizing must never silently inherit live-scale limits.
+  if (context.headStage === "CANARY") {
+    if (context.canaryMaxAllocationPct == null) {
+      return {
+        approved: false,
+        positionSizePct: 0,
+        reason:
+          "Canary allocation cap is not configured — new risk refused (fail closed)",
+      };
+    }
+    if ((input.proposedPositionPct ?? 0) > context.canaryMaxAllocationPct) {
+      return {
+        approved: false,
+        positionSizePct: 0,
+        reason: `Canary allocation ${input.proposedPositionPct}% exceeds the ${context.canaryMaxAllocationPct}% cap`,
+      };
+    }
+  }
+
   // 3. Portfolio safety axes. Missing optional measurements are handled by
   // the server path as unavailable data; the pure core remains reusable.
   if (
@@ -320,13 +357,19 @@ export function evaluateProposalRisk(
     };
   }
 
-  // 5. Confidence-scaled sizing, capped at the configured maximum.
-  const positionSizePct = Number(
-    Math.min(
-      limits.maxPositionPct,
-      input.confidence * limits.maxPositionPct,
-    ).toFixed(2),
+  // 5. Confidence-scaled sizing, capped at the configured maximum — and
+  //     for canary heads additionally clamped under the canary allocation
+  //     cap, so confidence inflation cannot scale a canary order past its
+  //     predeclared budget.
+  const scaledSizePct = Math.min(
+    limits.maxPositionPct,
+    input.confidence * limits.maxPositionPct,
   );
+  const cappedSizePct =
+    context.headStage === "CANARY" && context.canaryMaxAllocationPct != null
+      ? Math.min(scaledSizePct, context.canaryMaxAllocationPct)
+      : scaledSizePct;
+  const positionSizePct = Number(cappedSizePct.toFixed(2));
 
   return {
     approved: true,
@@ -342,7 +385,7 @@ export function evaluateProposalRisk(
  * rejected rather than approved on missing risk data.
  */
 export async function evaluateProposalRiskServer(
-  input: { asset: string; confidence: number },
+  input: { asset: string; confidence: number; headStage?: string },
   limits: RiskLimits,
 ): Promise<RiskEvaluation> {
   let context: RiskGateContext;
@@ -374,7 +417,9 @@ export async function evaluateProposalRiskServer(
       };
     }
     context = {
+      canaryMaxAllocationPct: runtime.canaryMaxAllocationPct,
       dailyRealizedPnl,
+      headStage: input.headStage,
       killSwitchEnabled,
       maxOpenPositions: runtime.maxOpenPositions,
       openPositions,

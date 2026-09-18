@@ -10,6 +10,7 @@ import { strategyPlugins } from "@/db/schema/strategies";
 import { log } from "@/lib/evlog";
 import { getLatestPromotionRecord } from "@/lib/promotion-records";
 import {
+  effectiveLossThreshold,
   evaluateRollbackTrigger,
   type RollbackTriggerReason,
   rollbackReasonDetail,
@@ -24,8 +25,9 @@ import { getRuntimeSettings } from "@/lib/runtime-settings";
  *
  * Every pass:
  *  1. reads the operator's predeclared thresholds (rollbackMaxLossPct /
- *     rollbackMaxDrawdownPct runtime settings; both null → no-op pass —
- *     automatic kills never run on inherited defaults);
+ *     rollbackMaxDrawdownPct / canaryLossBudgetPct runtime settings; all
+ *     null → no-op pass — automatic kills never run on inherited
+ *     defaults);
  *  2. enumerates ENABLED plugins whose lineage head sits at CANARY or LIVE
  *     (the capital-bearing stages);
  *  3. evaluates the head record's metrics against the thresholds using the
@@ -44,6 +46,11 @@ import { getRuntimeSettings } from "@/lib/runtime-settings";
 export interface RollbackPassSummary {
   checked: number;
   halted: Array<{ pluginId: string; reasons: RollbackTriggerReason[] }>;
+  /**
+   * CANARY-stage plugins holding capital with NO loss budget armed —
+   * surfaced so operators can close the gap the checklist §7 requires.
+   */
+  unbudgetedCanaries: string[];
   skipped: number;
 }
 
@@ -58,6 +65,7 @@ export interface RollbackMonitorDeps {
   readCapital: () => Promise<number>;
   readHead: (pluginId: string) => Promise<PromotionRecord | null>;
   readThresholds: () => Promise<{
+    canaryMaxLossPct: number | null;
     maxDrawdownPct: number | null;
     maxLossPct: number | null;
   }>;
@@ -88,6 +96,7 @@ function defaultDeps(): RollbackMonitorDeps {
     readThresholds: async () => {
       const settings = await getRuntimeSettings();
       return {
+        canaryMaxLossPct: settings.canaryLossBudgetPct,
         maxDrawdownPct: settings.rollbackMaxDrawdownPct,
         maxLossPct: settings.rollbackMaxLossPct,
       };
@@ -99,14 +108,23 @@ export async function runStrategyRollbackMonitor(
   depsInput?: Partial<RollbackMonitorDeps>,
 ): Promise<RollbackPassSummary> {
   const deps: RollbackMonitorDeps = { ...defaultDeps(), ...depsInput };
-  const summary: RollbackPassSummary = { checked: 0, halted: [], skipped: 0 };
+  const summary: RollbackPassSummary = {
+    checked: 0,
+    halted: [],
+    skipped: 0,
+    unbudgetedCanaries: [],
+  };
 
   const [thresholds, capital] = await Promise.all([
     deps.readThresholds(),
     deps.readCapital(),
   ]);
 
-  if (thresholds.maxDrawdownPct === null && thresholds.maxLossPct === null) {
+  if (
+    thresholds.maxDrawdownPct === null &&
+    thresholds.maxLossPct === null &&
+    thresholds.canaryMaxLossPct === null
+  ) {
     // Nothing predeclared: the monitor does not even enumerate plugins.
     log.info({
       job: "strategy-rollback",
@@ -128,6 +146,10 @@ export async function runStrategyRollbackMonitor(
       summary.checked += 1;
 
       const head = await deps.readHead(pluginId);
+      const lossThreshold = effectiveLossThreshold(head?.stage ?? "", {
+        canaryMaxLossPct: thresholds.canaryMaxLossPct ?? null,
+        maxLossPct: thresholds.maxLossPct,
+      });
       const evaluation = evaluateRollbackTrigger({
         capital,
         headStage: head?.stage ?? "",
@@ -136,6 +158,20 @@ export async function runStrategyRollbackMonitor(
       });
 
       if (!evaluation.trigger) {
+        // A canary holding capital with the canary loss budget NOT armed
+        // is exactly the state checklist §7 exists to prevent — surface
+        // it loudly (even when a looser global cap happens to cover it).
+        if (
+          head?.stage === "CANARY" &&
+          (thresholds.canaryMaxLossPct ?? null) === null
+        ) {
+          summary.unbudgetedCanaries.push(pluginId);
+          log.warn({
+            job: "strategy-rollback",
+            pluginId,
+            warning: "canary_loss_budget_not_armed",
+          });
+        }
         summary.skipped += 1;
         return;
       }
@@ -155,7 +191,11 @@ export async function runStrategyRollbackMonitor(
         return;
       }
 
-      const detail = rollbackReasonDetail(evaluation.reasons, head.metrics);
+      const detail = rollbackReasonDetail(
+        evaluation.reasons,
+        head.metrics,
+        lossThreshold,
+      );
       const outcome = await deps.halt({
         operator: ROLLBACK_OPERATOR,
         pluginId,

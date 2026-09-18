@@ -23,6 +23,7 @@ function makeDeps() {
   const metrics = new Map<string, PromotionRecord["metrics"]>();
   const halted: string[] = [];
   let thresholds = {
+    canaryMaxLossPct: null as number | null,
     maxDrawdownPct: 5 as number | null,
     maxLossPct: 5 as number | null,
   };
@@ -80,6 +81,7 @@ function makeDeps() {
       capital = value;
     },
     setThresholds: (next: {
+      canaryMaxLossPct: number | null;
       maxDrawdownPct: number | null;
       maxLossPct: number | null;
     }) => {
@@ -133,8 +135,41 @@ describe("strategy rollback monitor", () => {
     expect(world.halted).toEqual([]);
   });
 
+  it("flags a CANARY head with no loss budget and rolls it back when the budget breaches", async () => {
+    // Canary holds capital; the global loss cap is armed but the canary
+    // budget is not — unbudgeted, must be surfaced.
+    world.seed("unbudgeted", "CANARY", {
+      ...LIVE_METRICS,
+      pnl: -300, // 3% — under the 5% global cap
+    });
+    world.setThresholds({
+      canaryMaxLossPct: null,
+      maxDrawdownPct: null,
+      maxLossPct: 5,
+    });
+
+    let summary = await runStrategyRollbackMonitor(world.deps);
+    expect(summary.unbudgetedCanaries).toEqual(["unbudgeted"]);
+    expect(summary.halted).toEqual([]);
+
+    // Arm the canary budget: 3% loss ≥ 2% budget → rollback, not a skip.
+    world.setThresholds({
+      canaryMaxLossPct: 2,
+      maxDrawdownPct: null,
+      maxLossPct: 5,
+    });
+    summary = await runStrategyRollbackMonitor(world.deps);
+    expect(summary.halted).toEqual([
+      { pluginId: "unbudgeted", reasons: ["loss-threshold"] },
+    ]);
+  });
+
   it("is a no-op pass when no threshold is predeclared", async () => {
-    world.setThresholds({ maxDrawdownPct: null, maxLossPct: null });
+    world.setThresholds({
+      canaryMaxLossPct: null,
+      maxDrawdownPct: null,
+      maxLossPct: null,
+    });
     world.seed("breacher", "LIVE", LIVE_METRICS);
 
     const summary = await runStrategyRollbackMonitor(world.deps);

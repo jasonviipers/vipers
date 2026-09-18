@@ -21,7 +21,10 @@ import {
   registerStrategyPluginSource,
   runRegisteredStrategyPlugin,
 } from "@/ai/capital-engine/strategy-registry";
-import { registerStrategyPlugin } from "@/lib/promotion-records";
+import {
+  getLatestPromotionRecord,
+  registerStrategyPlugin,
+} from "@/lib/promotion-records";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
 import { riskAgentConfig } from "../agents/config";
 import { parseTradeProposal } from "../agents/trade-proposal";
@@ -284,8 +287,18 @@ export async function runConsensusWorkflow(
     maxDailyLoss: 3,
     maxPositionPct: 5,
   };
+  // The proposing plugin's lineage-head stage drives the canary controls
+  // (checklist §7): the risk gate caps (or refuses) canary orders by the
+  // predeclared allocation, the rollback monitor budgets canary losses.
+  const headRecord = await getLatestPromotionRecord(
+    CONSENSUS_PLUGIN_MANIFEST.pluginId,
+  );
   const risk = await evaluateProposalRiskServer(
-    { asset: proposal.asset, confidence: proposal.confidence },
+    {
+      asset: proposal.asset,
+      confidence: proposal.confidence,
+      headStage: headRecord?.stage,
+    },
     {
       maxDailyLossPct: limits.maxDailyLoss,
       maxPositionPct: limits.maxPositionPct,

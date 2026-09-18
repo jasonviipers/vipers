@@ -84,6 +84,13 @@
       "when": 1789718403697,
       "tag": "0011_daily_amphibian",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789725852861,
+      "tag": "0012_next_iron_fist",
+      "breakpoints": true
     }
   ]
 }

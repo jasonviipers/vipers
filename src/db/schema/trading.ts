@@ -61,6 +61,24 @@ export const runtimeSettings = pgTable("runtime_settings", {
   maxDailyLossPct: integer("max_daily_loss_pct"),
   maxOpenPositions: integer("max_open_positions"),
   /**
+   * Canary-stage controls (checklist §7 — maximum canary allocation and
+   * loss budget). Percent, integer. NULL = not armed; canary controls, like
+   * rollback triggers, must be deliberately predeclared and are never
+   * inherited from a default.
+   *
+   * canaryMaxAllocationPct — the per-order position-size ceiling the risk
+   * gate enforces for a plugin whose lineage head is at CANARY. When NULL,
+   * new risk for canary plugins is REFUSED (fail closed) rather than
+   * allowed at the live sizing.
+   *
+   * canaryLossBudgetPct — the loss budget the rollback monitor enforces
+   * for CANARY lineage heads: the effective loss threshold is the tighter
+   * of this and rollbackMaxLossPct (ignored for LIVE). See
+   * src/lib/rollback-policy.ts.
+   */
+  canaryLossBudgetPct: integer("canary_loss_budget_pct"),
+  canaryMaxAllocationPct: integer("canary_max_allocation_pct"),
+  /**
    * Auto-rollback thresholds for capital-bearing strategy plugins (see
    * src/lib/jobs/strategy-rollback-job.ts). Percent, integer; a plugin at
    * CANARY/LIVE whose lineage-head metrics breach a configured threshold

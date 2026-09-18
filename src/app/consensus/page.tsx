@@ -7,13 +7,13 @@ export const metadata: Metadata = {
   description:
     "View multi-agent consensus decisions with voting breakdowns, proposal history, and real-time agreement metrics for trade execution governance.",
   alternates: {
-    canonical: "https://quantex.app/consensus",
+    canonical: "https://viipers.com/consensus",
   },
   openGraph: {
-    title: "Consensus | QuantEx",
+    title: "Consensus | viipers",
     description:
       "View multi-agent consensus decisions with voting breakdowns and proposal history.",
-    url: "https://quantex.app/consensus",
+    url: "https://viipers.com/consensus",
   },
 };
 
