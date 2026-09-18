@@ -14,6 +14,10 @@ import {
   ledgerReconciliations,
   ledgerTransactions,
 } from "@/db/schema/portfolio";
+import {
+  CAPITAL_LEDGER_CURRENCIES,
+  unifyLedgerCashBalances,
+} from "@/lib/capital-basis";
 
 export interface LedgerEntryInput {
   accountId: string;
@@ -349,4 +353,21 @@ export async function readLedgerAccountBalance(
     .from(ledgerEntries)
     .where(eq(ledgerEntries.accountId, accountId));
   return row && row.entries > 0 ? Number(row.balance) : null;
+}
+
+/**
+ * Sum of the unified ledger cash book across BOTH capital currencies (see
+ * src/lib/capital-basis.ts). Null when no capital-currency account has any
+ * entries — the fresh-ledger signal capital readers fall back on. Every
+ * capital denominator (risk gate, portfolio rollup, balance sync basis)
+ * reads through this so OKX and Alpaca capital count as one book.
+ */
+export async function readUnifiedLedgerCash(): Promise<number | null> {
+  const balances = await Promise.all(
+    CAPITAL_LEDGER_CURRENCIES.map(async (currency) => {
+      const balance = await readLedgerAccountBalance("assets:cash", currency);
+      return balance;
+    }),
+  );
+  return unifyLedgerCashBalances(balances);
 }

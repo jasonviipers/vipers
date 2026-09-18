@@ -14,7 +14,7 @@ import { db } from "@/db";
 import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
 import { riskControls } from "@/db/schema/risk";
 import { positions } from "@/db/schema/trading";
-import { readLedgerAccountBalance } from "@/lib/capital-ledger";
+import { readUnifiedLedgerCash } from "@/lib/capital-ledger";
 import { log } from "@/lib/evlog";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
 import { fetchMarketQuote } from "./market-quote-tool";
@@ -125,16 +125,19 @@ async function fetchOpenPositionsCount(): Promise<number> {
  * the same capital denominator the risk gate uses.
  */
 export async function fetchTotalCapital(): Promise<number> {
-  // Once the independent ledger has a posted cash movement, it becomes the
-  // preferred capital source. The legacy projection remains the fallback
-  // during migration and for fresh installs with no ledger entries.
-  const ledgerCash = await readLedgerAccountBalance("assets:cash", "USDT");
-  if (ledgerCash !== null) {
+  // The unified ledger cash book spans BOTH capital currencies (USD +
+  // USDT — see src/lib/capital-basis.ts), so a book holding OKX and Alpaca
+  // capital reads their combined total. Null only when no capital-currency
+  // account has entries — the fresh-ledger fallback below. The legacy
+  // projection remains the fallback during migration and for fresh
+  // installs with no ledger entries.
+  const unifiedCash = await readUnifiedLedgerCash();
+  if (unifiedCash !== null) {
     const [open] = await db
       .select({ openPnl: sql<string>`coalesce(sum(${positions.pnl}), '0')` })
       .from(positions)
       .where(eq(positions.status, "OPEN"));
-    return ledgerCash + Number(open?.openPnl ?? 0);
+    return unifiedCash + Number(open?.openPnl ?? 0);
   }
 
   const [snapshot] = await db

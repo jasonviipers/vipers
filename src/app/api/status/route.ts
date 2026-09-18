@@ -1,6 +1,6 @@
 import { and, count, eq, gte, sql } from "drizzle-orm";
 
-import { isKnownBroker } from "@/channels/broker/registry";
+import { brokerQuoteCurrency, isKnownBroker } from "@/channels/broker/registry";
 import { db } from "@/db";
 import { agents } from "@/db/schema/agent";
 import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
@@ -132,10 +132,13 @@ export const GET = withEvlog(async () => {
   // stored credentials (UI-managed, encrypted) -> connected (demo flag
   // shown), otherwise the paper-book stub.
   let broker: {
+    /** Account-equity currency for the active broker ("USDT" | "USD"). */
+    currency: string;
     id: string;
     shortName: string;
     status: "connected" | "paper";
   } = {
+    currency: "USDT",
     id: "okx",
     shortName: "PAPER BOOK",
     status: "paper",
@@ -146,6 +149,7 @@ export const GET = withEvlog(async () => {
     const stored = await getBrokerCredentials(id);
     if (stored) {
       broker = {
+        currency: brokerQuoteCurrency(id),
         id,
         shortName:
           id === "alpaca"
@@ -158,7 +162,12 @@ export const GET = withEvlog(async () => {
         status: "connected",
       };
     } else {
-      broker = { id, shortName: "PAPER BOOK", status: "paper" };
+      broker = {
+        currency: brokerQuoteCurrency(id),
+        id,
+        shortName: "PAPER BOOK",
+        status: "paper",
+      };
     }
   } catch {
     // DB hiccup: keep the paper-book default instead of failing the payload.

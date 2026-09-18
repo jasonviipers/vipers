@@ -1,23 +1,34 @@
 import { eq, sql } from "drizzle-orm";
 import { alpacaClient } from "@/channels/alpaca/client";
-import type { BrokerId } from "@/channels/broker/registry";
+import { type BrokerId, brokerQuoteCurrency } from "@/channels/broker/registry";
 import { db } from "@/db";
 import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
 import { positions } from "@/db/schema/trading";
 import { getBrokerCredentials } from "@/lib/broker-credentials";
-import { postCapitalMovement } from "@/lib/capital-ledger";
+import {
+  postCapitalMovement,
+  readUnifiedLedgerCash,
+} from "@/lib/capital-ledger";
 import { log } from "@/lib/evlog";
 import { okxClient } from "../channels/okx/client";
 
 /**
  * Broker balance → capital ledger sync.
  *
- * TOTAL CAPITAL is derived from `capital_transactions` (the ledger is the
- * source of truth; see portfolio-snapshot-job). Connecting a broker alone
- * feeds nothing into that ledger, so the dashboard would show 0 forever.
- * This module closes the loop: it reads the ACTIVE broker's account equity
- * and records the delta vs. the ledger as a deposit/withdrawal movement,
- * keeping the ledger's append-only model intact.
+ * TOTAL CAPITAL is derived from the capital ledger (the source of truth;
+ * see portfolio-snapshot-job). Connecting a broker alone feeds nothing
+ * into that ledger, so the dashboard would show 0 forever. This module
+ * closes the loop: it reads a broker's account equity and records the
+ * delta vs. the ledger as a deposit/withdrawal movement, keeping the
+ * ledger's append-only model intact.
+ *
+ * CAPITAL IS ONE BOOK, re-anchored to the active broker: the reconciliation
+ * basis is the unified cash book across BOTH capital currencies (USD +
+ * USDT — see src/lib/capital-basis.ts), so syncing re-points the whole
+ * book to that broker's equity. Switching the active broker re-anchors it
+ * again (updateRuntimeSettings calls resyncCapitalToLedger), which is what
+ * makes the dashboard show the selected broker's capital instead of the
+ * previous one's.
  *
  * The sync is authoritative toward the ledger but conservative about the
  * broker: only a real, decrypted credential set triggers an API call, and
@@ -25,7 +36,6 @@ import { okxClient } from "../channels/okx/client";
  * read writes nothing, so a transient broker error can't wipe capital).
  */
 
-/** Ledger account id for broker-synced capital (mirrors EXECUTION_ACCOUNT). */
 const SYNC_ACCOUNT = "system";
 
 export interface BrokerEquity {
@@ -54,13 +64,8 @@ export class BrokerNotConfiguredError extends Error {
   }
 }
 
-const BROKER_QUOTE_CURRENCY: Record<BrokerId, string> = {
-  alpaca: "USD",
-  okx: "USDT",
-};
-
 /**
- * Read the ACTIVE broker's account equity. Throws
+ * Read the given broker's account equity. Throws
  * BrokerNotConfiguredError when no credentials are stored; propagates
  * broker API errors to the caller.
  */
@@ -117,14 +122,16 @@ export async function syncBrokerBalanceToLedger(
   brokerId: BrokerId = "okx",
 ): Promise<SyncResult> {
   const equity = await fetchBrokerEquity(brokerId);
-  const currency = BROKER_QUOTE_CURRENCY[brokerId];
+  const currency = brokerQuoteCurrency(brokerId);
 
   // Ledger capital WITHOUT open PnL — that part is owned by the rollup.
-  // Case expressions reference the typed columns so values stay bound to
-  // driver parameters (no string-built SQL).
+  // The basis is the unified ledger cash book (both capital currencies);
+  // when the independent ledger is empty (fresh install) the legacy
+  // capital_transactions projection is the fallback basis.
   // Aggregate selects return exactly one row; unwrap it in the promise so
   // Promise.all types stay precise (no nested array destructure).
-  const [flows, open] = await Promise.all([
+  const [unifiedCash, flows, open] = await Promise.all([
+    readUnifiedLedgerCash(),
     db
       .select({
         deposits: sql<string>`coalesce(sum(case when ${capitalTransactions.type} = 'deposit' then ${capitalTransactions.amount} else 0 end), '0')`,
@@ -144,9 +151,10 @@ export async function syncBrokerBalanceToLedger(
   ]);
 
   const ledgerCapital =
+    unifiedCash ??
     Number(flows?.deposits ?? 0) -
-    Number(flows?.withdrawals ?? 0) +
-    Number(flows?.realizedNet ?? 0);
+      Number(flows?.withdrawals ?? 0) +
+      Number(flows?.realizedNet ?? 0);
   const openPnl = Number(open?.openPnl ?? 0);
   const investedCapital = Number(open?.invested ?? 0);
 

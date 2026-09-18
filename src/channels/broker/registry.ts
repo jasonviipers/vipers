@@ -90,3 +90,14 @@ function brokerById(id: string): BrokerDefinition {
 export function brokerRequiresPassphrase(brokerId: string): boolean {
   return brokerById(brokerId).requiresPassphrase;
 }
+
+/** Quote currency each broker's account equity and orders are denominated in. */
+const BROKER_QUOTE_CURRENCIES: Record<BrokerId, string> = {
+  alpaca: "USD",
+  okx: "USDT",
+};
+
+/** Quote currency for a known broker; throws on unknown ids. */
+export function brokerQuoteCurrency(brokerId: string): string {
+  return BROKER_QUOTE_CURRENCIES[brokerById(brokerId).id];
+}

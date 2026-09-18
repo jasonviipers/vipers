@@ -8,6 +8,9 @@ import {
 } from "@/channels/broker/registry";
 import { db } from "@/db";
 import { runtimeSettings } from "@/db/schema/trading";
+import { syncBrokerBalanceToLedger } from "@/lib/broker-balance";
+import { isActiveBrokerSwitch } from "@/lib/capital-basis";
+import { log } from "@/lib/evlog";
 
 /**
  * Server-owned operator settings that the pipeline and API routes enforce.
@@ -16,6 +19,7 @@ import { runtimeSettings } from "@/db/schema/trading";
  * positions and debug mode write here (via PUT /api/settings/runtime) and
  * the ENFORCERS read from here:
  *
+ *   activeBrokerId     → execution routing + capital re-anchor (balance sync)
  *   automationEnabled     → automation tick gate     (automation job)
  *   automationIntervalSec → automation pass cadence  (automation job)
  *   consensusQuorum       → consensus step threshold (workflow)
@@ -137,11 +141,51 @@ export async function getRuntimeSettings(): Promise<RuntimeSettings> {
   return RUNTIME_SETTINGS_DEFAULTS;
 }
 
+/**
+ * Reconcile the capital ledger with the ACTIVE broker's account equity.
+ * Awaited by updateRuntimeSettings so the settings response (and the UI
+ * refetch it triggers) observes the refreshed snapshot; a failed probe is
+ * logged and retried by the next portfolio rollup — it never fails the
+ * settings write.
+ */
+async function resyncCapitalToLedger(brokerId: BrokerId): Promise<void> {
+  try {
+    const result = await syncBrokerBalanceToLedger(brokerId);
+    log.info({
+      action: "broker_switch_capital_resync",
+      brokerId,
+      delta: result.delta,
+      equityUsd: result.equityUsd,
+      totalCapital: result.totalCapital,
+    });
+  } catch (error) {
+    log.warn({
+      action: "broker_switch_capital_resync_failed",
+      brokerId,
+      detail: error instanceof Error ? error.message : "unknown error",
+    });
+  }
+}
+
 /** Apply a validated partial patch and return the effective settings. */
 export async function updateRuntimeSettings(
   patch: Partial<RuntimeSettings>,
 ): Promise<RuntimeSettings> {
   const current = await getRuntimeSettings();
+
+  // A broker SWITCH re-anchors the capital ledger to the new broker's
+  // account equity (src/lib/broker-balance.ts), so the dashboard, risk
+  // gate and rollback monitor immediately reflect the selected provider's
+  // capital. Awaited AFTER the settings row lands so the settings response
+  // and the refetch it triggers see the refreshed snapshot; a failed
+  // resync never fails the settings write.
+  const switchedBrokerId = isActiveBrokerSwitch(
+    current.activeBrokerId,
+    patch.activeBrokerId,
+  )
+    ? patch.activeBrokerId
+    : null;
+
   const next: RuntimeSettings = { ...current, ...patch };
 
   await db
@@ -178,6 +222,10 @@ export async function updateRuntimeSettings(
         updatedAt: new Date(),
       },
     });
+
+  if (switchedBrokerId) {
+    await resyncCapitalToLedger(switchedBrokerId);
+  }
 
   return next;
 }

@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { capitalTransactions, portfolioSnapshots } from "@/db/schema/portfolio";
 import { positions } from "@/db/schema/trading";
-import { readLedgerAccountBalance } from "@/lib/capital-ledger";
+import { readUnifiedLedgerCash } from "@/lib/capital-ledger";
 import { log } from "@/lib/evlog";
 
 /**
@@ -45,11 +45,15 @@ interface LedgerCapital {
  *   investedCapital  = sum over OPEN positions of entry notional
  *   availableCapital = totalCapital - investedCapital (floor 0)
  *
- * Shared by the snapshot rollup and the OKX balance sync so both agree on
- * what "current capital" means.
+ * Shared by the snapshot rollup and the broker balance sync so both agree
+ * on what "current capital" means.
  */
 async function computeLedgerCapital(): Promise<LedgerCapital> {
-  const independentCash = await readLedgerAccountBalance("assets:cash", "USDT");
+  // The unified ledger cash book spans BOTH capital currencies (USD +
+  // USDT — see src/lib/capital-basis.ts), so a book holding OKX and Alpaca
+  // capital rolls up their combined total. Null only when no
+  // capital-currency account has entries — the legacy fallback below.
+  const independentCash = await readUnifiedLedgerCash();
   if (independentCash !== null) {
     const [open] = await db
       .select({
