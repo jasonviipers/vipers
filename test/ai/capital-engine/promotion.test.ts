@@ -9,6 +9,7 @@ const record = {
   configHash: "config-hash",
   dataSnapshotIds: ["data-2027-01"],
   evaluatedAt: "2027-01-01T00:00:00.000Z",
+  metrics: null,
   pluginId: "momentum",
   pluginVersion: "1.0.0",
   policyHash: "policy-v1",

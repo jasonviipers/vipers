@@ -102,6 +102,9 @@ const { POST: disablePost } = await import(
 const { POST: reactivatePost } = await import(
   "@/app/api/strategies/plugins/[id]/reactivate/route"
 );
+const { POST: rollbackPost } = await import(
+  "@/app/api/strategies/plugins/[id]/rollback/route"
+);
 
 // The REAL registry: register the built-in plugin so the routes' fixture
 // verification (through the isolated worker) exercises the real path.
@@ -189,6 +192,20 @@ describe("POST /api/strategies/plugins/[id]/disable", () => {
     expect(json.previousStage).toBe("PAPER");
   });
 
+  it("accepts a regulatory reason kill switch", async () => {
+    const response = await disablePost(
+      request(
+        { reason: "regulatory" },
+        OPERATOR_KEY,
+        `/api/strategies/plugins/consensus-v1/disable`,
+      ),
+      paramsFor("consensus-v1"),
+    );
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as { disabled: boolean };
+    expect(json.disabled).toBe(true);
+  });
+
   it("404s an unknown plugin", async () => {
     lifecycleCurrentIdValue = "ghost-v1";
     const response = await disablePost(
@@ -241,5 +258,77 @@ describe("POST /api/strategies/plugins/[id]/reactivate", () => {
       paramsFor("consensus-v1"),
     );
     expect(response.status).toBe(403);
+  });
+});
+
+describe("POST /api/strategies/plugins/[id]/rollback", () => {
+  it("401s without credentials", async () => {
+    const response = await rollbackPost(
+      request(
+        { reason: "operator" },
+        "",
+        `/api/strategies/plugins/consensus-v1/rollback`,
+      ),
+      paramsFor("consensus-v1"),
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it("403s the read-only demo identity", async () => {
+    const response = await rollbackPost(
+      request(
+        { reason: "operator" },
+        DEMO_KEY,
+        `/api/strategies/plugins/consensus-v1/rollback`,
+      ),
+      paramsFor("consensus-v1"),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("400s an invalid reason and a drift-claim reason", async () => {
+    for (const reason of ["because", "fixture-drift"]) {
+      const response = await rollbackPost(
+        request(
+          { reason },
+          OPERATOR_KEY,
+          `/api/strategies/plugins/consensus-v1/rollback`,
+        ),
+        paramsFor("consensus-v1"),
+      );
+      expect(response.status).toBe(400);
+    }
+  });
+
+  it("rolls back an enabled plugin and reports the previous stage", async () => {
+    const response = await rollbackPost(
+      request(
+        { detail: "venue behavior anomaly", reason: "risk-breach" },
+        OPERATOR_KEY,
+        `/api/strategies/plugins/consensus-v1/rollback`,
+      ),
+      paramsFor("consensus-v1"),
+    );
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as {
+      previousStage: string;
+      rolledBack: boolean;
+    };
+    expect(json.rolledBack).toBe(true);
+    expect(json.previousStage).toBe("PAPER");
+    expect(lifecyclePlugins["consensus-v1"]?.enabled).toBe(false);
+  });
+
+  it("404s an unknown plugin", async () => {
+    lifecycleCurrentIdValue = "ghost-v1";
+    const response = await rollbackPost(
+      request(
+        { reason: "operator" },
+        OPERATOR_KEY,
+        `/api/strategies/plugins/ghost-v1/rollback`,
+      ),
+      paramsFor("ghost-v1"),
+    );
+    expect(response.status).toBe(404);
   });
 });

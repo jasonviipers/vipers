@@ -36,6 +36,7 @@ export type DisableReason =
   | "operator"
   | "risk-breach"
   | "fixture-drift"
+  | "regulatory"
   | "under-review";
 
 export type LifecycleOutcome =
