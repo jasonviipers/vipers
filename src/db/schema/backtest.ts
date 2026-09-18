@@ -32,6 +32,8 @@ export const pitDatasets = pgTable(
       .notNull()
       .defaultNow(),
     id: uuid("id").primaryKey().defaultRandom(),
+    /** Dataset axis: "bars" (market OHLCV) or "sentiment" (news/reddit). */
+    kind: text("kind").notNull().default("bars"),
     /** Inclusive coverage window, epoch ms. */
     windowEndMs: bigint("window_end_ms", { mode: "number" }).notNull(),
     windowStartMs: bigint("window_start_ms", { mode: "number" }).notNull(),

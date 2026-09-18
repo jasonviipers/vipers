@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { getLogger, withEvlog } from "@/lib/evlog";
-import { runPitIngestion } from "@/lib/jobs/pit-ingestion-job";
+import {
+  runPitIngestion,
+  runPitSentimentIngestion,
+} from "@/lib/jobs/pit-ingestion-job";
 import { requireWriteAccess } from "@/lib/route-auth";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +12,8 @@ const ingestionSchema = z.object({
   asset: z.string().min(1).max(20),
   days: z.number().int().min(1).max(365).optional(),
   endMs: z.number().int().positive().optional(),
+  /** Dataset axis: "bars" (broker historical, default) or "sentiment". */
+  kind: z.enum(["bars", "sentiment"]).optional(),
   startMs: z.number().int().positive().optional(),
 });
 
@@ -54,11 +59,16 @@ export const POST = withEvlog(async (request: Request) => {
   }
 
   try {
-    const result = await runPitIngestion(parsed.data);
+    const kind = parsed.data.kind ?? "bars";
+    const result =
+      kind === "sentiment"
+        ? await runPitSentimentIngestion({ asset: parsed.data.asset })
+        : await runPitIngestion(parsed.data);
     logger.set({
       audit: "pit_ingestion",
       datasetHash: result.datasetHash,
       job: "pit-ingestion",
+      kind: result.kind,
       reused: result.reused,
     });
     return Response.json(result);

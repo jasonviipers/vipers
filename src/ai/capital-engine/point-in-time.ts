@@ -165,6 +165,126 @@ export function pitBarAt(
   return pitValueAt(dataset, at).value;
 }
 
+// ---------------------------------------------------------------------------
+// News/sentiment axis. The same discipline as bars: a backtest decision may
+// only see what the SYSTEM had observed at the decision moment. The as-of
+// stamp is the OBSERVATION time (fetchedAt), never the post-authoring time —
+// a post published at T enters our world only when our scraper fetched it.
+// Values are aggregated over a trailing window exactly like the live
+// fetchMarketSignals tool (count-weighted VADER on reddit + news, 0..1 unit
+// scale), so a backtest reading is computed the same way a live reading was.
+// ---------------------------------------------------------------------------
+
+/** One archived message, pre-scored — the raw material for the sentiment axis. */
+export interface PitSentimentObservation {
+  externalId: string;
+  /** Epoch ms — when the system fetched/observed the item (the as-of stamp). */
+  fetchedAtMs: number;
+  /** VADER compound for the body, −1..1, scored identically to the live tool. */
+  source: "news" | "reddit";
+  vaderCompound: number;
+}
+
+/** The sentiment reading a decision sees — parity with live MarketSignals. */
+export interface PitSentimentValue {
+  /** Observations in the trailing window, per source. */
+  newsCount: number;
+  redditCount: number;
+  /** 0..1, 0.5 neutral — count-weighted combination, same formula as live. */
+  sentimentScore: number;
+  socialVolume: number;
+}
+
+const DEFAULT_SENTIMENT_WINDOW_MS = 7 * 24 * 3_600_000; // reddit searches t=week
+
+/** Live-tool parity: VADER compound (−1..1) → unit scale (0..1, 0.5 neutral). */
+function compoundToUnit(compound: number): number {
+  return Number(((compound + 1) / 2).toFixed(3));
+}
+
+function windowAverageUnit(compounds: number[]): number {
+  if (compounds.length === 0) {
+    return 0.5;
+  }
+  const avg = compounds.reduce((a, b) => a + b, 0) / compounds.length;
+  return compoundToUnit(avg);
+}
+
+/**
+ * Build the sentiment PIT dataset from archived observations. Each distinct
+ * fetchedAt stamp is one point whose value aggregates every observation
+ * fetched in the trailing `windowMs` (default 7d) — arrivals in the same
+ * scrape pass share one stamp and one point, keeping stamps strictly
+ * ascending like every PIT dataset. Returns null for an empty archive (the
+ * caller refuses, it never fabricates a neutral history).
+ */
+export function pitSentimentFromObservations(
+  asset: string,
+  observations: PitSentimentObservation[],
+  opts?: { windowMs?: number },
+): PitDataset<PitSentimentValue> | null {
+  const windowMs = opts?.windowMs ?? DEFAULT_SENTIMENT_WINDOW_MS;
+  if (!(windowMs > 0)) {
+    throw new Error("sentiment windowMs must be positive");
+  }
+
+  // Dedupe (a message is one observation no matter how many passes saw it).
+  const unique = new Map<string, PitSentimentObservation>();
+  for (const o of observations) {
+    if (!Number.isFinite(o.fetchedAtMs) || o.fetchedAtMs < 0) {
+      throw new Error("sentiment observation has an invalid fetchedAt stamp");
+    }
+    unique.set(`${o.source}:${o.externalId}`, o);
+  }
+  if (unique.size === 0) {
+    return null;
+  }
+
+  // Group arrivals by stamp, ascending — a batch arrival is one point.
+  const byStamp = new Map<number, PitSentimentObservation[]>();
+  for (const o of unique.values()) {
+    const batch = byStamp.get(o.fetchedAtMs);
+    if (batch) {
+      batch.push(o);
+    } else {
+      byStamp.set(o.fetchedAtMs, [o]);
+    }
+  }
+  const stamps = [...byStamp.keys()].sort((a, b) => a - b);
+
+  const ordered = [...unique.values()].sort(
+    (a, b) => a.fetchedAtMs - b.fetchedAtMs,
+  );
+  const points = stamps.map((stamp) => {
+    // Trailing window (stamp − windowMs, stamp]: older observations age out.
+    const inWindow = ordered.filter(
+      (o) => o.fetchedAtMs <= stamp && o.fetchedAtMs > stamp - windowMs,
+    );
+    const reddit = inWindow.filter((o) => o.source === "reddit");
+    const news = inWindow.filter((o) => o.source === "news");
+    const redditScore = windowAverageUnit(reddit.map((o) => o.vaderCompound));
+    const newsScore = windowAverageUnit(news.map((o) => o.vaderCompound));
+    const total = reddit.length + news.length;
+    const combined =
+      total === 0
+        ? 0.5
+        : (redditScore * reddit.length + newsScore * news.length) / total;
+    return {
+      asOf: stamp,
+      source: "scraper-archive-sentiment",
+      validTo: null,
+      value: {
+        newsCount: news.length,
+        redditCount: reddit.length,
+        sentimentScore: Number(combined.toFixed(3)),
+        socialVolume: total,
+      } satisfies PitSentimentValue,
+    };
+  });
+
+  return createPitDataset({ asset, points });
+}
+
 /**
  * Canonical sha256 over the dataset — pinning the EXACT data window a
  * backtest/walk-forward run used into its promotion record, so results are

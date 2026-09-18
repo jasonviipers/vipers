@@ -5,8 +5,10 @@ import {
   hashPitDataset,
   PitLeakageError,
   type PitPoint,
+  type PitSentimentObservation,
   pitBarAt,
   pitBarsFromSimulationBars,
+  pitSentimentFromObservations,
   pitValueAt,
 } from "@/ai/capital-engine/point-in-time";
 import type { SimulationBar } from "@/ai/capital-engine/simulation";
@@ -166,5 +168,113 @@ describe("bar conversion and hashing", () => {
       points: pricePoints([[T0, 101]]),
     });
     expect(hashPitDataset(changed)).not.toBe(hashPitDataset(a));
+  });
+});
+
+describe("pitSentimentFromObservations — news/sentiment axis", () => {
+  const DAY = 24 * HOUR;
+
+  function obs(
+    id: string,
+    fetchedAtMs: number,
+    vaderCompound: number,
+    source: "news" | "reddit" = "reddit",
+  ): PitSentimentObservation {
+    return { externalId: id, fetchedAtMs, source, vaderCompound };
+  }
+
+  /** Non-null view of a built sentiment dataset (throws instead of `!`). */
+  function mustPit(
+    dataset: ReturnType<typeof pitSentimentFromObservations>,
+  ): NonNullable<ReturnType<typeof pitSentimentFromObservations>> {
+    if (!dataset) {
+      throw new Error("expected a dataset, got null");
+    }
+    return dataset;
+  }
+
+  it("stamps observations at their fetchedAt — the observation time", () => {
+    const dataset = mustPit(
+      pitSentimentFromObservations("BTC", [
+        obs("r1", T0, 0.6),
+        obs("n1", T0 + HOUR, -0.2, "news"),
+      ]),
+    );
+    expect(dataset.points.map((p) => p.asOf)).toEqual([T0, T0 + HOUR]);
+    expect(pitValueAt(dataset, T0 + HOUR - 1).value.redditCount).toBe(1);
+    expect(pitValueAt(dataset, T0 + HOUR - 1).value.newsCount).toBe(0);
+    expect(pitValueAt(dataset, T0 + HOUR).value.newsCount).toBe(1);
+  });
+
+  it("aggregates with the live tool's count-weighted unit-scale formula", () => {
+    // 3 reddit posts at compound +0.6 → unit 0.8; 1 news item at 0.0 → 0.5.
+    // Combined = (0.8*3 + 0.5*1) / 4 = 0.725 — exactly fetchMarketSignals.
+    const dataset = mustPit(
+      pitSentimentFromObservations("BTC", [
+        obs("a", T0, 0.6),
+        obs("b", T0, 0.6),
+        obs("c", T0, 0.6),
+        obs("d", T0, 0, "news"),
+      ]),
+    );
+    const value = pitValueAt(dataset, T0).value;
+    expect(value.redditCount).toBe(3);
+    expect(value.newsCount).toBe(1);
+    expect(value.socialVolume).toBe(4);
+    expect(value.sentimentScore).toBe(0.725);
+  });
+
+  it("batches same-stamp arrivals into one point (strictly ascending stamps)", () => {
+    // 50 messages fetched in one scrape pass share one fetchedAt stamp —
+    // 50 points at the same stamp would be rejected by createPitDataset.
+    const arrivals = Array.from({ length: 50 }, (_, i) =>
+      obs(`m${i}`, T0, 0.1),
+    );
+    const dataset = mustPit(pitSentimentFromObservations("BTC", arrivals));
+    expect(dataset.points).toHaveLength(1);
+    expect(dataset.points[0].value.socialVolume).toBe(50);
+  });
+
+  it("ages observations out of the trailing window — a real step function", () => {
+    // One burst at T0, one at T0 + 8d (outside the 7d window of the burst).
+    const dataset = mustPit(
+      pitSentimentFromObservations("BTC", [
+        obs("old", T0, 0.9),
+        obs("new", T0 + 8 * DAY, -0.5),
+      ]),
+    );
+    expect(pitValueAt(dataset, T0 + DAY).value.socialVolume).toBe(1);
+    // At the 8d stamp the burst has aged out: only the new observation counts.
+    const later = pitValueAt(dataset, T0 + 8 * DAY).value;
+    expect(later.socialVolume).toBe(1);
+    expect(later.redditCount).toBe(1);
+    expect(later.sentimentScore).toBe(0.25); // compound −0.5 → unit 0.25
+  });
+
+  it("dedupes repeated observations of the same message", () => {
+    const dataset = mustPit(
+      pitSentimentFromObservations("BTC", [
+        obs("dup", T0, 0.5),
+        obs("dup", T0 + HOUR, 0.5), // re-scraped, same id
+      ]),
+    );
+    expect(dataset.points).toHaveLength(1);
+    expect(dataset.points[0].value.socialVolume).toBe(1);
+  });
+
+  it("returns null for an empty archive — callers refuse, never fabricate", () => {
+    expect(pitSentimentFromObservations("BTC", [])).toBeNull();
+  });
+
+  it("rejects observations with invalid stamps", () => {
+    expect(() =>
+      pitSentimentFromObservations("BTC", [obs("bad", Number.NaN, 0)]),
+    ).toThrow(/invalid fetchedAt/);
+  });
+
+  it("hashes consistently with the rest of the PIT contract", () => {
+    const a = mustPit(pitSentimentFromObservations("BTC", [obs("x", T0, 0.3)]));
+    const b = mustPit(pitSentimentFromObservations("BTC", [obs("x", T0, 0.3)]));
+    expect(hashPitDataset(a)).toBe(hashPitDataset(b));
   });
 });

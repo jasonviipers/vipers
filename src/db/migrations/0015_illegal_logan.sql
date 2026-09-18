@@ -1,0 +1,1 @@
+ALTER TABLE "pit_datasets" ADD COLUMN "kind" text DEFAULT 'bars' NOT NULL;

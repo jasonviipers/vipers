@@ -1,9 +1,12 @@
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import vaderSentiment from "vader-sentiment";
 import {
   createPitDataset,
   hashPitDataset,
   type PitDataset,
   type PitPoint,
+  type PitSentimentObservation,
+  pitSentimentFromObservations,
 } from "@/ai/capital-engine/point-in-time";
 import type { SimulationBar } from "@/ai/capital-engine/simulation";
 import { alpacaClient } from "@/channels/alpaca/client";
@@ -11,6 +14,8 @@ import { isKnownBroker } from "@/channels/broker/registry";
 import { db } from "@/db";
 import { pitDatasets } from "@/db/schema/backtest";
 import { runtimeSettings } from "@/db/schema/trading";
+import { scraperDb } from "@/db/scraper-index";
+import { scrapedMessages } from "@/db/scraper-schema";
 import { getBrokerCredentials } from "@/lib/broker-credentials";
 import { log } from "@/lib/evlog";
 
@@ -54,6 +59,8 @@ export interface PitIngestionResult {
   /** True when an existing cached dataset covered the window. */
   reused: boolean;
   window: { endMs: number; startMs: number } | null;
+  /** Dataset axis ingested. */
+  kind: "bars" | "sentiment";
 }
 
 interface StoredDataset {
@@ -149,6 +156,7 @@ export async function runPitIngestion(input: {
       barCount: 0,
       brokerId: null,
       datasetHash: null,
+      kind: "bars",
       reused: false,
       window: null,
     };
@@ -180,6 +188,7 @@ export async function runPitIngestion(input: {
       barCount: cached.dataset.points.length,
       brokerId,
       datasetHash: cached.datasetHash,
+      kind: "bars",
       reused: true,
       window,
     };
@@ -229,6 +238,7 @@ export async function runPitIngestion(input: {
       brokerId,
       dataset: { asset: input.asset, points },
       datasetHash,
+      kind: "bars",
       windowEndMs: window.endMs,
       windowStartMs: window.startMs,
     })
@@ -255,7 +265,130 @@ export async function runPitIngestion(input: {
     barCount: points.length,
     brokerId,
     datasetHash,
+    kind: "bars",
     reused: false,
     window,
+  };
+}
+
+/**
+ * Ingest the news/sentiment axis into the PIT contract (the REMAINS-PENDING
+ * half of the §7 PIT item).
+ *
+ * Source: the durable scraper archive (`scraped_messages`, the write-through
+ * store the Reddit/news tools maintain). The as-of stamp is each message's
+ * `fetchedAt` — when the SYSTEM observed it — never `postedAt`: a post
+ * published at T enters our world only when our scraper fetched it, and a
+ * backtest may only see what had been observed. Values recompute VADER on
+ * the stored body (identically to the live `fetchMarketSignals` tool) and
+ * aggregate over the trailing 7-day window via the pure
+ * `pitSentimentFromObservations` adapter.
+ *
+ * The stored window is the archive's own observed stamp range — the stamps
+ * DEFINE coverage; nothing else can. Rows are never edited: the same stamp
+ * range later re-ingested with a bigger archive keeps the ORIGINAL bytes
+ * (onConflictDoNothing), so backtests pinned to an older hash stay
+ * reproducible.
+ */
+export async function runPitSentimentIngestion(input: {
+  asset: string;
+}): Promise<PitIngestionResult> {
+  if (!scraperDb) {
+    throw new Error(
+      "PIT sentiment ingestion requires SCRAPER_DATABASE_URL (the durable news/reddit archive)",
+    );
+  }
+
+  // The archive stores the asset exactly as the tools received it — cover
+  // both the pair form ("BTC-USD") and the bare base ("BTC").
+  const upper = input.asset.toUpperCase();
+  const base = upper.split(/[-/]/)[0] ?? upper;
+  const assetVariants = [...new Set([upper, base])];
+
+  const rows = await scraperDb
+    .select({
+      body: scrapedMessages.body,
+      externalId: scrapedMessages.externalId,
+      fetchedAt: scrapedMessages.fetchedAt,
+      sentimentScore: scrapedMessages.sentimentScore,
+      source: scrapedMessages.source,
+    })
+    .from(scrapedMessages)
+    .where(
+      and(
+        inArray(scrapedMessages.asset, assetVariants),
+        inArray(scrapedMessages.source, ["reddit", "news"]),
+      ),
+    )
+    .orderBy(scrapedMessages.fetchedAt);
+
+  if (rows.length === 0) {
+    throw new Error(
+      `PIT sentiment ingestion for ${input.asset}: the scraper archive holds no reddit/news observations — trigger the scrape tools first (nothing is fabricated)`,
+    );
+  }
+
+  const observations: PitSentimentObservation[] = rows.map((row) => ({
+    externalId: row.externalId,
+    fetchedAtMs: row.fetchedAt.getTime(),
+    source: row.source === "reddit" ? "reddit" : "news",
+    // Prefer the stored score when present; otherwise score now, exactly
+    // like the live tool does on the same body text.
+    vaderCompound:
+      row.sentimentScore ??
+      vaderSentiment.SentimentIntensityAnalyzer.polarity_scores(row.body)
+        .compound,
+  }));
+
+  const dataset = pitSentimentFromObservations(input.asset, observations);
+  if (!dataset) {
+    throw new Error(
+      `PIT sentiment ingestion for ${input.asset}: archive resolved to an empty dataset (nothing fabricated)`,
+    );
+  }
+  const datasetHash = hashPitDataset(dataset);
+  const stamps = dataset.points.map((p) => p.asOf);
+  const windowStartMs = Math.min(...stamps);
+  const windowEndMs = Math.max(...stamps);
+
+  await db
+    .insert(pitDatasets)
+    .values({
+      asset: input.asset,
+      brokerId: "scraper-archive",
+      dataset: { asset: input.asset, points: dataset.points },
+      datasetHash,
+      kind: "sentiment",
+      windowEndMs,
+      windowStartMs,
+    })
+    .onConflictDoNothing({
+      target: [
+        pitDatasets.asset,
+        pitDatasets.brokerId,
+        pitDatasets.windowStartMs,
+        pitDatasets.windowEndMs,
+      ],
+    });
+
+  log.info({
+    asset: input.asset,
+    datasetHash,
+    job: "pit-ingestion",
+    kind: "sentiment",
+    observations: observations.length,
+    points: dataset.points.length,
+    windowEnd: windowEndMs,
+    windowStart: windowStartMs,
+  });
+
+  return {
+    asset: input.asset,
+    barCount: dataset.points.length,
+    brokerId: "scraper-archive",
+    datasetHash,
+    kind: "sentiment",
+    reused: false,
+    window: { endMs: windowEndMs, startMs: windowStartMs },
   };
 }
