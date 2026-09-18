@@ -146,15 +146,15 @@ function ProposalCard({
           aria-valuenow={proposal.votesFor}
         >
           <div
-            className="bg-terminal-green transition-all"
+            className="bg-terminal-green transition-[width]"
             style={{ width: `${forPct}%` }}
           />
           <div
-            className="bg-terminal-dim transition-all"
+            className="bg-terminal-dim transition-[width]"
             style={{ width: `${remainingPct}%` }}
           />
           <div
-            className="bg-terminal-red transition-all"
+            className="bg-terminal-red transition-[width]"
             style={{ width: `${againstPct}%` }}
           />
         </div>
@@ -201,7 +201,9 @@ export function ConsensusView() {
     return () => clearInterval(timer);
   }, []);
 
-  const proposals = data?.items ?? [];
+  // Stable reference for the memo below: data?.items is recreated when the
+  // query object changes identity, so derive once from the query result.
+  const proposals = useMemo(() => data?.items ?? [], [data?.items]);
 
   const counts = useMemo(
     () =>

@@ -9,9 +9,4 @@
  * when writing new routes.
  */
 
-export type { AuthResult } from "@/lib/session-auth";
-export {
-  authenticate,
-  requirePermission,
-  requireWriteAccess,
-} from "@/lib/session-auth";
+export { requireWriteAccess } from "@/lib/session-auth";

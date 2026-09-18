@@ -9,7 +9,7 @@ import { z } from "zod";
  * EXECUTION, COORDINATION) decoupled and independently replaceable.
  */
 
-export const SignalCreatedSchema = z.object({
+const SignalCreatedSchema = z.object({
   asset: z.string(),
   confidence: z.number().min(0).max(1),
   createdAt: z.string(),
@@ -18,7 +18,7 @@ export const SignalCreatedSchema = z.object({
   type: z.literal("SIGNAL_CREATED"),
 });
 
-export const AnalysisProposedSchema = z.object({
+const AnalysisProposedSchema = z.object({
   agentId: z.string(),
   asset: z.string(),
   confidence: z.number().min(0).max(1),
@@ -30,7 +30,7 @@ export const AnalysisProposedSchema = z.object({
   type: z.literal("ANALYSIS_PROPOSED"),
 });
 
-export const RiskDecisionSchema = z.object({
+const RiskDecisionSchema = z.object({
   asset: z.string(),
   createdAt: z.string(),
   positionSizePct: z.number().min(0).max(100).optional(),
@@ -39,7 +39,7 @@ export const RiskDecisionSchema = z.object({
   type: z.enum(["RISK_APPROVED", "RISK_REJECTED"]),
 });
 
-export const OrderEventSchema = z.object({
+const OrderEventSchema = z.object({
   asset: z.string(),
   createdAt: z.string(),
   detail: z.string().optional(),
@@ -50,7 +50,7 @@ export const OrderEventSchema = z.object({
   type: z.enum(["ORDER_SUBMITTED", "ORDER_FILLED", "ORDER_FAILED"]),
 });
 
-export const ConsensusReachedSchema = z.object({
+const ConsensusReachedSchema = z.object({
   asset: z.string(),
   confidence: z.number().min(0).max(1),
   createdAt: z.string(),
@@ -76,14 +76,6 @@ export type RiskDecision = z.infer<typeof RiskDecisionSchema>;
 export type OrderEvent = z.infer<typeof OrderEventSchema>;
 export type ConsensusReached = z.infer<typeof ConsensusReachedSchema>;
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
-
-export type AgentEventType = AgentEvent["type"];
-
-/**
- * Single canonical topic name retained for API compatibility with the event
- * stream. All agent events flow through the shared in-process bus.
- */
-export const TRADING_EVENT_TOPIC = "trading.events.v1";
 
 /**
  * Deterministic ids for event payloads. Exported so workflow steps and tools

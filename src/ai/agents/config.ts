@@ -23,6 +23,7 @@ export interface AgentConfig {
     maxPositionPct: number;
     maxDailyLoss: number;
   };
+  search?: boolean;
   role: string;
   team: AgentTeam;
   timeoutMs: number;
@@ -62,9 +63,6 @@ const sentimentAgentConfig: AgentConfig = {
   id: "sentiment-agent",
   codename: "PULSE_READER",
   maxConcurrency: 2,
-  // Fleet-wide dynamic model: resolved per call from the operator's
-  // DEFAULT LLM PROVIDER (runtime_settings) — see lib/llm-model.ts.
-  // This string is the display label only; it is never passed to a provider.
   model: FLEET_MODEL_LABEL,
   role: "Extract market sentiment from social and news sources",
   team: "SENTIMENT",
@@ -82,9 +80,6 @@ const technicalAnalysisAgentConfig: AgentConfig = {
   id: "technical-analysis-agent",
   codename: "CHART_SCOUT",
   maxConcurrency: 2,
-  // Fleet-wide dynamic model: resolved per call from the operator's
-  // DEFAULT LLM PROVIDER (runtime_settings) — see lib/llm-model.ts.
-  // This string is the display label only; it is never passed to a provider.
   model: FLEET_MODEL_LABEL,
   role: "Technical indicators, regime detection and pattern analysis",
   team: "ANALYSIS",
@@ -96,13 +91,11 @@ export const reasoningAnalysisAgentConfig: AgentConfig = {
   id: "reasoning-analysis-agent",
   codename: "THESIS_FORGE",
   maxConcurrency: 1,
-  // Fleet-wide dynamic model: resolved per call from the operator's
-  // DEFAULT LLM PROVIDER (runtime_settings) — see lib/llm-model.ts.
-  // This string is the display label only; it is never passed to a provider.
   model: FLEET_MODEL_LABEL,
   role: "LLM reasoning over signals to produce trade proposals",
   team: "ANALYSIS",
   timeoutMs: 45_000,
+  search: true,
   tools: [
     "fetchMarketQuote",
     "gatherStockTwitsSentiment",
@@ -116,9 +109,6 @@ export const riskAgentConfig: AgentConfig = {
   id: "risk-agent",
   codename: "VAULT_SHIELD",
   maxConcurrency: 1,
-  // Fleet-wide dynamic model: resolved per call from the operator's
-  // DEFAULT LLM PROVIDER (runtime_settings) — see lib/llm-model.ts.
-  // This string is the display label only; it is never passed to a provider.
   model: FLEET_MODEL_LABEL,
   riskLimits: {
     maxDailyLoss: 3,
@@ -134,9 +124,6 @@ const executionAgentConfig: AgentConfig = {
   id: "order-executor-agent",
   codename: "STRIKE_VIPER",
   maxConcurrency: 1,
-  // Fleet-wide dynamic model: resolved per call from the operator's
-  // DEFAULT LLM PROVIDER (runtime_settings) — see lib/llm-model.ts.
-  // This string is the display label only; it is never passed to a provider.
   model: FLEET_MODEL_LABEL,
   role: "Broker orders, fills, retries, reconciliation and order lifecycle",
   team: "EXECUTION",
@@ -148,9 +135,6 @@ const coordinatorAgentConfig: AgentConfig = {
   id: "orchestrator-agent",
   codename: "ALPHA_SENTINEL",
   maxConcurrency: 1,
-  // Fleet-wide dynamic model: resolved per call from the operator's
-  // DEFAULT LLM PROVIDER (runtime_settings) — see lib/llm-model.ts.
-  // This string is the display label only; it is never passed to a provider.
   model: FLEET_MODEL_LABEL,
   role: "Aggregate proposals, run consensus, schedule and resolve conflicts",
   team: "COORDINATION",

@@ -14,8 +14,8 @@ export function TickerBar() {
       className="flex shrink-0 items-center gap-8 whitespace-nowrap px-4"
       aria-hidden={ariaHidden || undefined}
     >
-      {items.map((item, i) => (
-        <TickerRow key={`${item.asset}-${i}`} item={item} />
+      {items.map((item) => (
+        <TickerRow key={item.asset} item={item} />
       ))}
     </div>
   );

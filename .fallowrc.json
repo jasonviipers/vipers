@@ -8,6 +8,10 @@
       "exports": ["*"]
     },
     {
+      "file": "src/ai/broker/alpaca-broker.ts",
+      "exports": ["*"]
+    },
+    {
       "file": "src/channels/broker/adapter.ts",
       "exports": ["*"]
     },
@@ -17,6 +21,38 @@
     },
     {
       "file": "src/ai/tools/stocktwits-tool.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/components/ui/field.tsx",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/components/ui/input-group.tsx",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/lib/route-auth.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/lib/capital-ledger.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/lib/permissions.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/lib/redis.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/lib/sound.ts",
+      "exports": ["*"]
+    },
+    {
+      "file": "src/db/scraper-index.ts",
       "exports": ["*"]
     }
   ],

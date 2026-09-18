@@ -9,11 +9,11 @@ export interface TickerItem {
   volume: string;
 }
 
-export interface QuotesResponse {
+interface QuotesResponse {
   items: TickerItem[];
 }
 
-export const quotesKeys = {
+const quotesKeys = {
   all: ["quotes"] as const,
   live: () => [...quotesKeys.all, "live"] as const,
 };

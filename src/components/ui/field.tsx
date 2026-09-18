@@ -201,13 +201,8 @@ function FieldError({
 
     return (
       <ul className="ml-4 flex list-disc flex-col gap-1">
-        {uniqueErrors.map((error, index) =>
-          error?.message ? (
-            // Index keys are correct here: the list is a fully re-derived
-            // deduplicated snapshot of form errors — no reordering occurs.
-            // biome-ignore lint/suspicious/noArrayIndexKey: static dedup snapshot, not a reorderable list
-            <li key={index}>{error.message}</li>
-          ) : null,
+        {uniqueErrors.map((error) =>
+          error?.message ? <li key={error.message}>{error.message}</li> : null,
         )}
       </ul>
     );

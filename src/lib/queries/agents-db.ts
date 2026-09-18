@@ -43,7 +43,7 @@ export interface AgentFleetEntry {
   };
 }
 
-export interface AgentsFleetResponse {
+interface AgentsFleetResponse {
   items: AgentFleetEntry[];
   onlineCount: number;
   /** Online-window seconds (3 × operator heartbeat interval, bounded). */
@@ -51,18 +51,7 @@ export interface AgentsFleetResponse {
   total: number;
 }
 
-export interface PendingProposal {
-  id: string;
-  asset: string;
-  direction: "LONG" | "SHORT";
-  quantity: number;
-  entryPrice: number | null;
-  reasoning: string;
-  confidence: number;
-  agentName: string;
-}
-
-export const agentsDbKeys = {
+const agentsDbKeys = {
   all: ["agents-db"] as const,
   fleet: () => [...agentsDbKeys.all, "fleet"] as const,
 };

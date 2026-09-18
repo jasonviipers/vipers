@@ -53,7 +53,7 @@ export const PLUGIN_EXECUTION_BUDGET_MS = 5_000;
 export const MAX_PLUGIN_EXECUTION_BUDGET_MS = 30_000;
 
 /** Default heap cap; callers may raise it up to MAX_PLUGIN_HEAP_MB. */
-export const PLUGIN_HEAP_LIMIT_MB = 128;
+const PLUGIN_HEAP_LIMIT_MB = 128;
 export const MAX_PLUGIN_HEAP_MB = 512;
 
 /** Sync-code ceiling inside the vm realm (vm timeout for runInContext). */

@@ -384,12 +384,6 @@ export async function fetchMarketSignals(
   }
 }
 
-export function fetchMarketSignalsBatch(
-  assets: string[],
-): Promise<MarketSignals[]> {
-  return Promise.all(assets.map(fetchMarketSignals));
-}
-
 // ---------------------------------------------------------------------------
 // Per-source scraping: `scrapeReddit` and `scrapeNews` surface one source at
 // a time so agents can ask for "any" channel directly instead of only the

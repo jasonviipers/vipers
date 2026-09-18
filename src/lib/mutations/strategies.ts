@@ -5,7 +5,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   type StrategyDto,
   type StrategyInput,
-  strategyInputSchema,
   strategyKeys,
 } from "@/lib/queries/strategies";
 
@@ -250,8 +249,3 @@ export function useDeleteStrategy() {
     },
   });
 }
-
-// Re-export so client code validates form payloads against the exact
-// contract the API enforces before sending anything.
-export { strategyInputSchema };
-export type { StrategyInput, StrategyDto };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { clearClientSession, saveClientSession } from "@/lib/api-key";
@@ -16,12 +16,12 @@ import { TickerBar } from "./ticker-bar";
  * Ask the server whether a signed session cookie exists; the cookie itself is
  * HttpOnly so the browser cannot read it directly.
  */
-async function checkSession(): Promise<{
+async function checkSession(signal?: AbortSignal): Promise<{
   authenticated: boolean;
   demo: boolean;
 }> {
   try {
-    const res = await fetch("/api/auth/session", { cache: "no-store" });
+    const res = await fetch("/api/auth/session", { cache: "no-store", signal });
     if (!res.ok) return { authenticated: false, demo: false };
     const payload = (await res.json()) as {
       authenticated?: unknown;
@@ -37,25 +37,31 @@ async function checkSession(): Promise<{
 }
 
 export function TerminalLayout({ children }: { children: React.ReactNode }) {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [compact, setCompact] = useState(false);
   const [animations, setAnimations] = useState(true);
   const [tickerEnabled, setTickerEnabled] = useState(true);
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    let cancelled = false;
-    checkSession().then((session) => {
-      if (cancelled) return;
-      if (session.authenticated) {
-        saveClientSession({ demo: session.demo });
-        setAuthenticated(true);
-      } else {
-        setAuthenticated(false);
-      }
-    });
+  const sessionQuery = useQuery({
+    queryKey: ["terminal-session"],
+    queryFn: async () => checkSession(),
+    retry: false,
+  });
+  // The auth gate reads "unknown / authenticated / unauthenticated": null
+  // while the session probe is still in flight, then true/false.
+  const authenticated =
+    sessionQuery.isLoading || sessionQuery.isPending
+      ? null
+      : Boolean(sessionQuery.data?.authenticated);
 
-    // Apply display settings on mount and live on save.
+  useEffect(() => {
+    if (sessionQuery.data?.authenticated) {
+      saveClientSession({ demo: sessionQuery.data.demo });
+    }
+  }, [sessionQuery.data]);
+
+  // Apply display settings on mount and live on save.
+  useEffect(() => {
     const apply = () => {
       const s = loadTerminalSettings();
       setCompact(s.compactMode);
@@ -64,15 +70,12 @@ export function TerminalLayout({ children }: { children: React.ReactNode }) {
     };
     apply();
     window.addEventListener("viipers:settings-changed", apply);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("viipers:settings-changed", apply);
-    };
+    return () => window.removeEventListener("viipers:settings-changed", apply);
   }, []);
 
   function handleAuthenticate() {
-    setAuthenticated(true);
     // Reads that 401'd before login are stale; refetch once the cookie is set.
+    queryClient.invalidateQueries({ queryKey: ["terminal-session"] });
     queryClient.invalidateQueries();
   }
 
@@ -84,7 +87,10 @@ export function TerminalLayout({ children }: { children: React.ReactNode }) {
       // client marker below is cleared regardless.
     }
     clearClientSession();
-    setAuthenticated(false);
+    queryClient.setQueryData(["terminal-session"], {
+      authenticated: false,
+      demo: false,
+    });
   }
 
   if (authenticated === null) {

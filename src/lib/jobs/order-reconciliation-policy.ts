@@ -7,7 +7,13 @@ export type ReconciliationDecision =
 export function classifyReconciliationState(input: {
   avgPrice: number;
   fillQuantity: number;
-  state: "canceled" | "filled" | "live" | "partially_filled";
+  state:
+    | "canceled"
+    | "expired"
+    | "filled"
+    | "live"
+    | "partially_filled"
+    | "rejected";
 }): ReconciliationDecision {
   if (
     input.state === "filled" &&
@@ -16,7 +22,14 @@ export function classifyReconciliationState(input: {
   ) {
     return "finalize_filled";
   }
-  if (input.state === "canceled" && input.fillQuantity === 0) {
+  // Alpaca exposes additional zero-fill terminal states (expired day
+  // orders, rejected orders) that are as dead as a cancellation.
+  if (
+    (input.state === "canceled" ||
+      input.state === "expired" ||
+      input.state === "rejected") &&
+    input.fillQuantity === 0
+  ) {
     return "finalize_failed";
   }
   return "unresolved";

@@ -56,10 +56,10 @@ if (process.env.NEXT_RUNTIME === "nodejs") {
     const JOB_INTERVAL_MS = 60 * 60 * 1000;
 
     const startSnapshotJob = async () => {
-      const { runPortfolioSnapshotJob } = await import(
-        "./src/lib/jobs/portfolio-snapshot-job"
-      );
-      const { log } = await import("./src/lib/evlog");
+      const [{ runPortfolioSnapshotJob }, { log }] = await Promise.all([
+        import("./src/lib/jobs/portfolio-snapshot-job"),
+        import("./src/lib/evlog"),
+      ]);
       const run = () =>
         runPortfolioSnapshotJob().catch(() => {
           // Errors are logged inside the job; never crash the process.
@@ -77,10 +77,10 @@ if (process.env.NEXT_RUNTIME === "nodejs") {
     // uncertain. The worker only finalizes confirmed terminal exchange
     // states; live/partial/error outcomes remain PENDING and are retried.
     const startOrderReconciliationJob = async () => {
-      const { reconcilePendingOrders } = await import(
-        "./src/lib/jobs/order-reconciliation-job"
-      );
-      const { log } = await import("./src/lib/evlog");
+      const [{ reconcilePendingOrders }, { log }] = await Promise.all([
+        import("./src/lib/jobs/order-reconciliation-job"),
+        import("./src/lib/evlog"),
+      ]);
       const run = () =>
         reconcilePendingOrders().catch(() => {
           // Per-order failures are logged inside the worker; never crash the process.
@@ -93,14 +93,35 @@ if (process.env.NEXT_RUNTIME === "nodejs") {
 
     void startOrderReconciliationJob();
 
+    // Strategy rollback monitor: evaluates predeclared rollback thresholds
+    // (runtime settings) against the lineage-head metrics of enabled,
+    // capital-bearing plugins and halts breaches through the audited kill
+    // switch. No-op pass unless the operator predeclared a threshold.
+    const startRollbackMonitor = async () => {
+      const [{ runStrategyRollbackMonitor }, { log }] = await Promise.all([
+        import("./src/lib/jobs/strategy-rollback-job"),
+        import("./src/lib/evlog"),
+      ]);
+      const run = () =>
+        runStrategyRollbackMonitor().catch(() => {
+          // Failures are logged inside the monitor; never crash the process.
+        });
+      setTimeout(run, 45_000).unref();
+      const timer = setInterval(run, 60_000);
+      timer.unref();
+      log.info({ job: "strategy-rollback", scheduled: "every-minute" });
+    };
+
+    void startRollbackMonitor();
+
     // Leaderboard score rollup — persists per-agent composite scores so
     // rankings survive restarts (same cadence as the snapshot job; scores
     // only move when trades close, so hourly is plenty).
     const startScoreJob = async () => {
-      const { runLeaderboardScoreJob } = await import(
-        "./src/lib/jobs/leaderboard-score-job"
-      );
-      const { log } = await import("./src/lib/evlog");
+      const [{ runLeaderboardScoreJob }, { log }] = await Promise.all([
+        import("./src/lib/jobs/leaderboard-score-job"),
+        import("./src/lib/evlog"),
+      ]);
       const run = () =>
         runLeaderboardScoreJob().catch(() => {
           // Errors are logged inside the job; never crash the process.

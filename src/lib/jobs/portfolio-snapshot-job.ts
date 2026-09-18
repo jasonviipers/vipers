@@ -31,7 +31,7 @@ interface CapitalAtPoint {
   totalCapital: string;
 }
 
-export interface LedgerCapital {
+interface LedgerCapital {
   availableCapital: number;
   investedCapital: number;
   openPnl: number;
@@ -48,7 +48,7 @@ export interface LedgerCapital {
  * Shared by the snapshot rollup and the OKX balance sync so both agree on
  * what "current capital" means.
  */
-export async function computeLedgerCapital(): Promise<LedgerCapital> {
+async function computeLedgerCapital(): Promise<LedgerCapital> {
   const independentCash = await readLedgerAccountBalance("assets:cash", "USDT");
   if (independentCash !== null) {
     const [open] = await db
@@ -69,30 +69,29 @@ export async function computeLedgerCapital(): Promise<LedgerCapital> {
     };
   }
 
-  const [flows] = await db
-    .select({
-      deposits: sql<string>`coalesce(sum(${sql.raw(
-        "case when type = 'deposit' then amount else 0 end",
-      )}), '0')`,
-      withdrawals: sql<string>`coalesce(sum(${sql.raw(
-        "case when type = 'withdrawal' then amount else 0 end",
-      )}), '0')`,
-      // Realized P&L net of fees. Deposits/withdrawals are capital flows,
-      // not P&L, so they contribute nothing here (they enter via the
-      // deposits/withdrawals columns above).
-      realizedNet: sql<string>`coalesce(sum(${sql.raw(
-        "case when type = 'realized_pnl' then amount when type = 'fee' then -amount else 0 end",
-      )}), '0')`,
-    })
-    .from(capitalTransactions);
-
-  const [open] = await db
-    .select({
-      openPnl: sql<string>`coalesce(sum(${positions.pnl}), '0')`,
-      invested: sql<string>`coalesce(sum(${positions.entryPrice} * ${positions.quantity}), '0')`,
-    })
-    .from(positions)
-    .where(eq(positions.status, "OPEN"));
+  // Aggregate selects return exactly one row; unwrap it in the promise so
+  // Promise.all types stay precise (no nested array destructure).
+  const [flows, open] = await Promise.all([
+    db
+      .select({
+        deposits: sql<string>`coalesce(sum(case when ${capitalTransactions.type} = 'deposit' then ${capitalTransactions.amount} else 0 end), '0')`,
+        withdrawals: sql<string>`coalesce(sum(case when ${capitalTransactions.type} = 'withdrawal' then ${capitalTransactions.amount} else 0 end), '0')`,
+        // Realized P&L net of fees. Deposits/withdrawals are capital flows,
+        // not P&L, so they contribute nothing here (they enter via the
+        // deposits/withdrawals columns above).
+        realizedNet: sql<string>`coalesce(sum(case when ${capitalTransactions.type} = 'realized_pnl' then ${capitalTransactions.amount} when ${capitalTransactions.type} = 'fee' then -${capitalTransactions.amount} else 0 end), '0')`,
+      })
+      .from(capitalTransactions)
+      .then((rows) => rows[0]),
+    db
+      .select({
+        openPnl: sql<string>`coalesce(sum(${positions.pnl}), '0')`,
+        invested: sql<string>`coalesce(sum(${positions.entryPrice} * ${positions.quantity}), '0')`,
+      })
+      .from(positions)
+      .where(eq(positions.status, "OPEN"))
+      .then((rows) => rows[0]),
+  ]);
 
   const deposits = Number(flows?.deposits ?? 0);
   const withdrawals = Number(flows?.withdrawals ?? 0);
@@ -171,9 +170,7 @@ export async function backfillPortfolioSnapshots({
     // Capital before the window anchors the replay.
     const [pre] = await db
       .select({
-        net: sql<string>`coalesce(sum(${sql.raw(
-          "case when type = 'deposit' then amount when type = 'withdrawal' then -amount when type = 'realized_pnl' then amount else -amount end",
-        )}), '0')`,
+        net: sql<string>`coalesce(sum(case when ${capitalTransactions.type} = 'deposit' then ${capitalTransactions.amount} when ${capitalTransactions.type} = 'withdrawal' then -${capitalTransactions.amount} when ${capitalTransactions.type} = 'realized_pnl' then ${capitalTransactions.amount} else -${capitalTransactions.amount} end), '0')`,
       })
       .from(capitalTransactions)
       .where(

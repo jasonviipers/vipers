@@ -106,11 +106,6 @@ async function fetchDailyRealizedPnl(): Promise<number> {
 }
 
 /**
- * Total capital from the latest portfolio snapshot (the hourly rollup the
- * dashboard equity curve also reads). Falls back to the cumulative ledger
- * net when no snapshot exists yet (fresh install).
- */
-/**
  * Currently OPEN position count — feeds the operator's max-open-positions
  * cap (runtime settings) in the risk gate.
  */
@@ -122,7 +117,14 @@ async function fetchOpenPositionsCount(): Promise<number> {
   return rows[0]?.count ?? 0;
 }
 
-async function fetchTotalCapital(): Promise<number> {
+/**
+ * Total capital from the latest portfolio snapshot (the hourly rollup the
+ * dashboard equity curve also reads). Falls back to the cumulative ledger
+ * net when no snapshot exists yet (fresh install). Exported for the
+ * strategy-rollback monitor, which evaluates percent thresholds against
+ * the same capital denominator the risk gate uses.
+ */
+export async function fetchTotalCapital(): Promise<number> {
   // Once the independent ledger has a posted cash movement, it becomes the
   // preferred capital source. The legacy projection remains the fallback
   // during migration and for fresh installs with no ledger entries.

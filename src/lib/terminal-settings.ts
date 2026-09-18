@@ -112,7 +112,7 @@ export function saveTerminalSettings(settings: TerminalSettings): void {
 }
 
 /** Subscribe to settings changes; returns an unsubscribe function. */
-export function subscribeTerminalSettings(listener: Listener): () => void {
+function subscribeTerminalSettings(listener: Listener): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);

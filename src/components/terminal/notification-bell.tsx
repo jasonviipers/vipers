@@ -20,9 +20,9 @@ export function NotificationBell() {
   const { unreadCount } = useNotifications();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const bellButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
-  // Click-outside + Escape dismissal.
+  // Click-outside dismissal.
   useEffect(() => {
     if (!open) return;
     function onPointerDown(event: PointerEvent) {
@@ -34,24 +34,27 @@ export function NotificationBell() {
         setOpen(false);
       }
     }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-        bellButtonRef.current?.focus();
-      }
-    }
     document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  // Sync the native dialog (non-modal popover) with the open state.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) {
+      dialog.show();
+    } else if (!open && dialog.open) {
+      dialog.close();
+    }
+    const onClose = () => setOpen(false);
+    dialog.addEventListener("close", onClose);
+    return () => dialog.removeEventListener("close", onClose);
   }, [open]);
 
   return (
     <div ref={containerRef} className="relative hidden md:block">
       <button
-        ref={bellButtonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={
@@ -71,15 +74,13 @@ export function NotificationBell() {
         <NotificationBadgeIcon size="sm" />
       </button>
 
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Notifications"
-          className="absolute top-full right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] border border-border bg-card shadow-lg shadow-black/40"
-        >
-          <NotificationsList maxHeight="20rem" />
-        </div>
-      )}
+      <dialog
+        ref={dialogRef}
+        aria-label="Notifications"
+        className="absolute top-full right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] border border-border bg-card p-0 shadow-lg shadow-black/40"
+      >
+        <NotificationsList maxHeight="20rem" />
+      </dialog>
     </div>
   );
 }

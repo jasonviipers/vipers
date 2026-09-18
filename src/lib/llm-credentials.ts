@@ -105,30 +105,32 @@ function mask(key: string): string {
  * (DB row wins over env) and a masked hint.
  */
 export async function listLlmKeyStatuses(): Promise<LlmKeyStatus[]> {
-  const statuses: LlmKeyStatus[] = [];
-  for (const provider of LLM_PROVIDER_IDS) {
-    let dbKey: string | null = null;
-    try {
-      const [row] = await db
-        .select({ apiKeyCipher: llmCredentials.apiKeyCipher })
-        .from(llmCredentials)
-        .where(eq(llmCredentials.id, provider))
-        .limit(1);
-      if (row) {
-        dbKey = openSecret(row.apiKeyCipher);
+  // Per-provider rows are independent; env lookups are already sync, so the
+  // DB reads run concurrently and each provider keeps its own error guard.
+  return Promise.all(
+    LLM_PROVIDER_IDS.map(async (provider) => {
+      let dbKey: string | null = null;
+      try {
+        const [row] = await db
+          .select({ apiKeyCipher: llmCredentials.apiKeyCipher })
+          .from(llmCredentials)
+          .where(eq(llmCredentials.id, provider))
+          .limit(1);
+        if (row) {
+          dbKey = openSecret(row.apiKeyCipher);
+        }
+      } catch {
+        // DB unavailable — env fallback still applies below.
       }
-    } catch {
-      // DB unavailable — env fallback still applies below.
-    }
-    const envKey = process.env[PROVIDER_ENV_KEYS[provider]]?.trim() || null;
-    const effective = dbKey ?? envKey;
-    statuses.push({
-      hint: effective ? mask(effective) : null,
-      provider,
-      source: dbKey ? "database" : envKey ? "env" : null,
-    });
-  }
-  return statuses;
+      const envKey = process.env[PROVIDER_ENV_KEYS[provider]]?.trim() || null;
+      const effective = dbKey ?? envKey;
+      return {
+        hint: effective ? mask(effective) : null,
+        provider,
+        source: dbKey ? "database" : envKey ? "env" : null,
+      };
+    }),
+  );
 }
 
 export interface SaveLlmKeyInput {

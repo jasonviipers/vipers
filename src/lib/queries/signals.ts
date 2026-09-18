@@ -16,7 +16,7 @@ export interface SignalActivityResponse {
   windowHours: number;
 }
 
-export const signalActivityKeys = {
+const signalActivityKeys = {
   all: ["signals-activity"] as const,
   hourly: () => [...signalActivityKeys.all, "hourly"] as const,
   recent: () => [...signalActivityKeys.all, "recent"] as const,

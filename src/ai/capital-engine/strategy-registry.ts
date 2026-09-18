@@ -76,6 +76,11 @@ async function assertFixturesDeterministic(
     }
     let firstCanonical: string | undefined;
     for (let attempt = 0; attempt < FIXTURE_REPETITIONS; attempt++) {
+      // Determinism runs are intentionally serial: parallel isolated-worker
+      // executions could interleave worker-pool state, and the divergence
+      // report needs stable repetition ordering. Three tiny runs —
+      // parallelism is not a throughput concern here.
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
       const decision = await runIsolatedPluginSource({
         evidence: fixture.evidence,
         input: fixture.input,

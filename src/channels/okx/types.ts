@@ -135,16 +135,6 @@ export interface Position {
 
 // ── Instrument ───────────────────────────────────────────────────────
 
-export interface Instrument {
-  baseCcy: string;
-  ctMult: string;
-  instId: string;
-  instType: string;
-  minSz: string;
-  quoteCcy: string;
-  tickSz: string;
-}
-
 export interface Ticker {
   askPx: string;
   bidPx: string;
@@ -154,33 +144,6 @@ export interface Ticker {
 }
 
 // ── WebSocket ────────────────────────────────────────────────────────
-
-export interface WSLoginArgs {
-  apiKey: string;
-  passphrase: string;
-  sign: string;
-  timestamp: string;
-}
-
-export interface WSLoginMessage {
-  args: WSLoginArgs[];
-  op: "login";
-}
-
-export interface WSSubscribeMessage {
-  args: { channel: string; instId?: string }[];
-  op: "subscribe";
-}
-
-export interface WSHighLevelMessage {
-  arg?: {
-    channel: string;
-    instId: string;
-  };
-  event?: string;
-  msg?: string;
-  op: string;
-}
 
 export interface WSTickerMessage {
   arg: {
@@ -232,13 +195,6 @@ export interface WSOrderUpdate {
   sz: string;
   tdMode: string;
   uTime: string;
-}
-
-export interface WSAccountMessage {
-  arg: {
-    channel: string;
-  };
-  data: AccountBalance[];
 }
 
 export interface WSPositionMessage {

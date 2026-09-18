@@ -46,17 +46,15 @@ export async function storeScrapedMessages(
     body: m.body,
     externalId: `${source}:${m.externalId}`,
     postedAt: m.postedAt ? new Date(m.postedAt) : null,
-    raw: JSON.parse(
-      JSON.stringify({
-        author: m.author,
-        body: m.body,
-        externalId: m.externalId,
-        postedAt: m.postedAt ?? null,
-        sentimentLabel: m.sentimentLabel ?? null,
-        sentimentScore: m.sentimentScore ?? null,
-        url: m.url ?? null,
-      }),
-    ),
+    raw: structuredClone({
+      author: m.author,
+      body: m.body,
+      externalId: m.externalId,
+      postedAt: m.postedAt ?? null,
+      sentimentLabel: m.sentimentLabel ?? null,
+      sentimentScore: m.sentimentScore ?? null,
+      url: m.url ?? null,
+    }),
     sentimentLabel: m.sentimentLabel ?? null,
     sentimentScore: m.sentimentScore ?? null,
     source,
@@ -68,53 +66,6 @@ export async function storeScrapedMessages(
     log.error(
       new Error(`scraper store write failed (${source}): ${String(error)}`),
     );
-  }
-}
-
-/** Most recent scraped messages for a source+asset (newest first). */
-export async function readScrapedMessages(
-  source: ScrapeSource,
-  asset: string,
-  limit = 100,
-): Promise<ScrapedMessageInput[]> {
-  const database = db();
-  if (!database) return [];
-  try {
-    const rows = await database
-      .select({
-        author: scrapedMessages.author,
-        body: scrapedMessages.body,
-        externalId: scrapedMessages.externalId,
-        postedAt: scrapedMessages.postedAt,
-        sentimentLabel: scrapedMessages.sentimentLabel,
-        sentimentScore: scrapedMessages.sentimentScore,
-        url: scrapedMessages.url,
-      })
-      .from(scrapedMessages)
-      .where(
-        and(
-          eq(scrapedMessages.source, source),
-          eq(scrapedMessages.asset, asset.toUpperCase()),
-        ),
-      )
-      .orderBy(desc(scrapedMessages.postedAt))
-      .limit(limit);
-    return rows.map((row) => ({
-      author: row.author,
-      body: row.body,
-      externalId: row.externalId.replace(/^[^:]+:/, ""),
-      postedAt: row.postedAt,
-      sentimentLabel: row.sentimentLabel,
-      sentimentScore: row.sentimentScore,
-      url: row.url,
-    }));
-  } catch (error) {
-    log.error(
-      new Error(
-        `scraper store read failed (${source}/${asset}): ${String(error)}`,
-      ),
-    );
-    return [];
   }
 }
 
@@ -134,14 +85,14 @@ export async function setScrapeCache<T>(
       .values({
         cacheKey: key,
         expiresAt,
-        payload: JSON.parse(JSON.stringify(payload)) as unknown as object,
+        payload: structuredClone(payload) as unknown as object,
         source,
       })
       .onConflictDoUpdate({
         target: scrapeCache.cacheKey,
         set: {
           expiresAt,
-          payload: JSON.parse(JSON.stringify(payload)) as unknown as object,
+          payload: structuredClone(payload) as unknown as object,
         },
       });
   } catch (error) {

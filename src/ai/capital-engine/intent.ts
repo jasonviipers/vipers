@@ -7,7 +7,6 @@ import { z } from "zod";
 import { canonicalise } from "./canonical-json";
 
 export type CapitalDirection = "LONG" | "SHORT";
-export type CapitalDecision = CapitalDirection | "NO_TRADE";
 
 export interface CapitalIntent {
   asset: string;
@@ -39,7 +38,7 @@ export interface NoTradeDecision {
   strategyVersion: string;
 }
 
-export const capitalIntentSchema = z.object({
+const capitalIntentSchema = z.object({
   asset: z.string().min(1),
   confidence: z.number().min(0).max(1),
   direction: z.enum(["LONG", "SHORT"]),
@@ -54,7 +53,7 @@ export const capitalIntentSchema = z.object({
   strategyVersion: z.string().min(1),
 });
 
-export const noTradeDecisionSchema = z.object({
+const noTradeDecisionSchema = z.object({
   asset: z.string().min(1),
   confidence: z.number().min(0).max(1),
   decision: z.literal("NO_TRADE"),

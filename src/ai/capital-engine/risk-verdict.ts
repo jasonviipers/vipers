@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const riskVerdictSchema = z.object({
+const riskVerdictSchema = z.object({
   code: z.enum(["APPROVED", "REJECTED", "EXPIRED", "UNAVAILABLE"]),
   reason: z.string().min(1),
   evaluatedAt: z.string().datetime(),

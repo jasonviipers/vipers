@@ -1,6 +1,5 @@
 import { type AgentEvent, AgentEventSchema } from "./contracts";
 
-export type AgentEventPublisher = (event: AgentEvent) => Promise<void>;
 type AgentEventHandler = (event: AgentEvent) => void | Promise<void>;
 
 const GLOBAL_BUS_KEY = "__viipersTradingEventBus__";
@@ -31,7 +30,7 @@ function getGlobalBus(): TradingEventBus {
   return globalStore[GLOBAL_BUS_KEY];
 }
 
-export const tradingEventBus = getGlobalBus();
+const tradingEventBus = getGlobalBus();
 
 export function publishAgentEvent(event: AgentEvent): Promise<void> {
   return tradingEventBus.publish(event);

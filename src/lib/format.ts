@@ -20,7 +20,7 @@ const BASE_CURRENCY_DECIMALS: Record<string, number> = {
  * The operator's BASE CURRENCY setting (default USD). Falls back to USD
  * server-side / before hydration, matching DEFAULT_TERMINAL_SETTINGS.
  */
-export function baseCurrencySymbol(): string {
+function baseCurrencySymbol(): string {
   if (typeof window === "undefined") return "$";
   const symbol = BASE_CURRENCY_SYMBOLS[loadTerminalSettings().baseCurrency];
   return symbol ?? "$";

@@ -58,7 +58,7 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 /** Shape check for a well-formed operator-style API key. */
-export function isWellFormedApiKey(key: string): boolean {
+function isWellFormedApiKey(key: string): boolean {
   return new RegExp(env.API_KEY_PATTERN).test(key);
 }
 
@@ -80,7 +80,7 @@ function demoIdentity(): Identity {
   };
 }
 
-export function agentIdentity(agentId: string): Identity | null {
+function agentIdentity(agentId: string): Identity | null {
   const config = agentConfigs.find((agent) => agent.id === agentId);
   if (!config) {
     return null;
@@ -88,7 +88,7 @@ export function agentIdentity(agentId: string): Identity | null {
   return agentIdentityFromConfig(config);
 }
 
-export function agentIdentityFromConfig(config: AgentConfig): Identity {
+function agentIdentityFromConfig(config: AgentConfig): Identity {
   return {
     subject: `agent:${config.id}`,
     kind: "agent",
@@ -109,7 +109,7 @@ export const agentIdentities: ReadonlyMap<string, Identity> = new Map(
 );
 
 /** The subject an identity resolves to (used for logging, read-state). */
-export function identitySubject(identity: Identity): string {
+function identitySubject(identity: Identity): string {
   return identity.subject;
 }
 
@@ -188,9 +188,6 @@ function parseAgentApiKeys(): Record<string, string> {
 }
 
 /** Convenience for callers that only need a single permission check. */
-export function identityCan(
-  identity: Identity,
-  permission: Permission,
-): boolean {
+function identityCan(identity: Identity, permission: Permission): boolean {
   return can(identity.permissions, permission);
 }

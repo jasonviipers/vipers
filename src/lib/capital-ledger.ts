@@ -298,27 +298,32 @@ export interface CapitalLedgerHealth {
  * callers can alert and halt promotion when an imbalance is detected.
  */
 export async function checkCapitalLedgerHealth(): Promise<CapitalLedgerHealth> {
-  const [counts] = await db
-    .select({
-      entryCount: sql<number>`count(${ledgerEntries.id})::int`,
-      transactionCount: sql<number>`count(distinct ${ledgerTransactions.id})::int`,
-    })
-    .from(ledgerTransactions)
-    .leftJoin(
-      ledgerEntries,
-      eq(ledgerEntries.transactionId, ledgerTransactions.id),
-    );
-  const imbalanced = await db
-    .select({
-      transactionId: ledgerEntries.transactionId,
-      debit: sql<string>`coalesce(sum(case when ${ledgerEntries.side} = 'debit' then ${ledgerEntries.amount} else 0 end), '0')`,
-      credit: sql<string>`coalesce(sum(case when ${ledgerEntries.side} = 'credit' then ${ledgerEntries.amount} else 0 end), '0')`,
-    })
-    .from(ledgerEntries)
-    .groupBy(ledgerEntries.transactionId)
-    .having(
-      sql`sum(case when ${ledgerEntries.side} = 'debit' then ${ledgerEntries.amount} else -${ledgerEntries.amount} end) <> 0`,
-    );
+  // Aggregate selects return exactly one row; unwrap it in the promise so
+  // Promise.all types stay precise (no nested array destructure).
+  const [counts, imbalanced] = await Promise.all([
+    db
+      .select({
+        entryCount: sql<number>`count(${ledgerEntries.id})::int`,
+        transactionCount: sql<number>`count(distinct ${ledgerTransactions.id})::int`,
+      })
+      .from(ledgerTransactions)
+      .leftJoin(
+        ledgerEntries,
+        eq(ledgerEntries.transactionId, ledgerTransactions.id),
+      )
+      .then((rows) => rows[0]),
+    db
+      .select({
+        transactionId: ledgerEntries.transactionId,
+        debit: sql<string>`coalesce(sum(case when ${ledgerEntries.side} = 'debit' then ${ledgerEntries.amount} else 0 end), '0')`,
+        credit: sql<string>`coalesce(sum(case when ${ledgerEntries.side} = 'credit' then ${ledgerEntries.amount} else 0 end), '0')`,
+      })
+      .from(ledgerEntries)
+      .groupBy(ledgerEntries.transactionId)
+      .having(
+        sql`sum(case when ${ledgerEntries.side} = 'debit' then ${ledgerEntries.amount} else -${ledgerEntries.amount} end) <> 0`,
+      ),
+  ]);
   return {
     checkedAt: new Date().toISOString(),
     entryCount: counts?.entryCount ?? 0,

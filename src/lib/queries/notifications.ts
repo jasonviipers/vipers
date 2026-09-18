@@ -5,7 +5,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { getClientSession } from "@/lib/api-key";
 
 /**
@@ -21,13 +21,13 @@ import { getClientSession } from "@/lib/api-key";
  * optimistic-updates skill).
  */
 
-export interface ReadStateResponse {
+interface ReadStateResponse {
   eventIds: string[];
   /** False = unauthenticated; client falls back to local-only reads. */
   synced: boolean;
 }
 
-export const notificationKeys = {
+const notificationKeys = {
   all: ["notifications"] as const,
   readState: () => [...notificationKeys.all, "read-state"] as const,
 };
@@ -120,10 +120,10 @@ function patchReadState(
  * touched client-side).
  */
 export function useHasSyncableAuth(): boolean | null {
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
-  useEffect(() => {
-    setHasKey(getClientSession() !== null);
-  }, []);
+  const [hasKey] = useState<boolean | null>(() => {
+    if (typeof window === "undefined") return null;
+    return getClientSession() !== null;
+  });
   return hasKey;
 }
 

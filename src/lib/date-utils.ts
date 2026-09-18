@@ -49,11 +49,11 @@ export function formatTerminalDate(date: Date): string {
   });
 }
 
-export function formatTerminalDateTime(date: Date): string {
+function formatTerminalDateTime(date: Date): string {
   return `${formatTerminalDate(date)} ${formatTerminalTime(date)}`;
 }
 
-export function formatTimeAgo(date: Date) {
+function formatTimeAgo(date: Date) {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);

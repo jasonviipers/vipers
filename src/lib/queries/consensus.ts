@@ -22,7 +22,7 @@ export interface ConsensusProposalsResponse {
   source: "db" | "events";
 }
 
-export const consensusKeys = {
+const consensusKeys = {
   all: ["consensus"] as const,
   list: () => [...consensusKeys.all, "proposals"] as const,
 };

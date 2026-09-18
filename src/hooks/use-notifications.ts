@@ -131,10 +131,10 @@ export function useNotifications() {
 
   // Respect the /settings notification toggles (localStorage-backed), like
   // the signals view's alert threshold.
-  const [settings, setSettings] = useState(DEFAULT_TERMINAL_SETTINGS);
-  useEffect(() => {
-    setSettings(loadTerminalSettings());
-  }, []);
+  const [settings] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_TERMINAL_SETTINGS;
+    return loadTerminalSettings();
+  });
 
   // Clock tick keeps relative timestamps fresh between fetches.
   const [now, setNow] = useState(() => Date.now());
@@ -152,7 +152,10 @@ export function useNotifications() {
   );
 
   const synced = hasKey === true && serverReads?.synced === true;
-  const readIds = synced ? (serverReads?.eventIds ?? []) : (localReads ?? []);
+  const readIds = useMemo(
+    () => (synced ? (serverReads?.eventIds ?? []) : (localReads ?? [])),
+    [synced, serverReads?.eventIds, localReads],
+  );
 
   const isRead = useCallback((id: string) => readIds.includes(id), [readIds]);
 

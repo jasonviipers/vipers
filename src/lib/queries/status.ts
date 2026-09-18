@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-export interface PortfolioSummaryData {
+interface PortfolioSummaryData {
   availableCapital: number;
   dailyPnl: number;
   /** Oldest-first total-capital rollups for the equity curve (max 60). */
@@ -14,7 +14,7 @@ export interface PortfolioSummaryData {
   weeklyPnl: number;
 }
 
-export interface LlmUsageData {
+interface LlmUsageData {
   todayCost: number;
   todayInputTokens: number;
   todayOutputTokens: number;
@@ -23,14 +23,14 @@ export interface LlmUsageData {
   totalOutputTokens: number;
 }
 
-export interface StatusResponse {
+interface StatusResponse {
   agents: { online: number; total: number };
   broker: { shortName: string; status: "connected" | "paper" };
   llm: LlmUsageData;
   portfolio: PortfolioSummaryData;
 }
 
-export const statusKeys = {
+const statusKeys = {
   all: ["status"] as const,
   summary: () => [...statusKeys.all, "summary"] as const,
 };

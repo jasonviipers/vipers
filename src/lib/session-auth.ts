@@ -88,11 +88,7 @@ export function sessionFromRequest(request: Request): Identity | null {
   return identityFromPayload(payload);
 }
 
-/**
- * Authenticate a request via session cookie, then API key. 401 when neither
- * yields a valid identity.
- */
-export function authenticate(request: Request): AuthResult {
+function authenticate(request: Request): AuthResult {
   const fromSession = sessionFromRequest(request);
   if (fromSession) {
     return { ok: true, identity: fromSession };
@@ -183,14 +179,4 @@ export function requirePermission(
     };
   }
   return auth;
-}
-
-/**
- * Resolve the caller's identity without failing the request. Used by
- * read-path personalization (notification read-state) where a missing
- * identity degrades to anonymous rather than a 401.
- */
-export function optionalIdentity(request: Request): Identity | null {
-  const auth = authenticate(request);
-  return auth.ok ? auth.identity : null;
 }

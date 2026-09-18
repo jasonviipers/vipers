@@ -47,53 +47,43 @@ export async function runLeaderboardScoreJob(): Promise<{ updated: number }> {
     // stats keep them visible (and floor-scaled) on the leaderboard.
     const allAgents = await db.select({ id: agents.id }).from(agents);
 
-    let updated = 0;
-    for (const agent of allAgents) {
-      const stats = statsByAgent.get(agent.id);
-      const trades = stats?.trades ?? 0;
-      const wins = stats?.wins ?? 0;
-      const losses = stats?.losses ?? 0;
-      const pnl = Number(stats?.pnl ?? 0);
+    // Upserts are independent per agent (distinct agentId), so the whole
+    // set runs concurrently instead of serially.
+    await Promise.all(
+      allAgents.map(async (agent) => {
+        const stats = statsByAgent.get(agent.id);
+        const trades = stats?.trades ?? 0;
+        const wins = stats?.wins ?? 0;
+        const losses = stats?.losses ?? 0;
+        const pnl = Number(stats?.pnl ?? 0);
 
-      // Conservative derivations (no invested-capital history is stored):
-      // roi over a nominal 1000 book, sharpe from the win/loss split.
-      const roi = trades > 0 ? (pnl / 1000) * 100 : 0;
-      const winRate = trades > 0 ? (wins / trades) * 100 : 0;
-      const maxDrawdown = Math.max(
-        0,
-        (-Number(stats?.maxLoss ?? 0) / 1000) * 100,
-      );
-      const sharpe =
-        trades > 0 && losses > 0
-          ? (winRate / 100 - losses / trades) / Math.sqrt(trades)
-          : trades > 0
-            ? 1
-            : 0;
+        // Conservative derivations (no invested-capital history is stored):
+        // roi over a nominal 1000 book, sharpe from the win/loss split.
+        const roi = trades > 0 ? (pnl / 1000) * 100 : 0;
+        const winRate = trades > 0 ? (wins / trades) * 100 : 0;
+        const maxDrawdown = Math.max(
+          0,
+          (-Number(stats?.maxLoss ?? 0) / 1000) * 100,
+        );
+        const sharpe =
+          trades > 0 && losses > 0
+            ? (winRate / 100 - losses / trades) / Math.sqrt(trades)
+            : trades > 0
+              ? 1
+              : 0;
 
-      const score = computeLeaderboardScore({
-        maxDrawdown,
-        roi,
-        sharpe,
-        trades,
-        winRate,
-      });
-
-      await db
-        .insert(agentStats)
-        .values({
-          agentId: agent.id,
-          maxDrawdown: maxDrawdown.toString(),
-          pnl: pnl.toString(),
-          roi: roi.toString(),
-          score: score.toString(),
-          scoreComputedAt: new Date(),
-          sharpe: sharpe.toString(),
+        const score = computeLeaderboardScore({
+          maxDrawdown,
+          roi,
+          sharpe,
           trades,
-          winRate: winRate.toString(),
-        })
-        .onConflictDoUpdate({
-          target: agentStats.agentId,
-          set: {
+          winRate,
+        });
+
+        await db
+          .insert(agentStats)
+          .values({
+            agentId: agent.id,
             maxDrawdown: maxDrawdown.toString(),
             pnl: pnl.toString(),
             roi: roi.toString(),
@@ -102,11 +92,24 @@ export async function runLeaderboardScoreJob(): Promise<{ updated: number }> {
             sharpe: sharpe.toString(),
             trades,
             winRate: winRate.toString(),
-            updatedAt: new Date(),
-          },
-        });
-      updated += 1;
-    }
+          })
+          .onConflictDoUpdate({
+            target: agentStats.agentId,
+            set: {
+              maxDrawdown: maxDrawdown.toString(),
+              pnl: pnl.toString(),
+              roi: roi.toString(),
+              score: score.toString(),
+              scoreComputedAt: new Date(),
+              sharpe: sharpe.toString(),
+              trades,
+              winRate: winRate.toString(),
+              updatedAt: new Date(),
+            },
+          });
+      }),
+    );
+    const updated = allAgents.length;
 
     log.info({ job: "leaderboard-score", updated });
     return { updated };

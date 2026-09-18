@@ -10,14 +10,14 @@ export interface FeedEvent {
   timestamp: string;
 }
 
-export interface FeedResponse {
+interface FeedResponse {
   /** Newest-first, bounded. */
   items: FeedEvent[];
   onlineCount: number;
   total: number;
 }
 
-export const feedKeys = {
+const feedKeys = {
   all: ["feed"] as const,
   recent: () => [...feedKeys.all, "recent"] as const,
 };

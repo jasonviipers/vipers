@@ -1,3 +1,4 @@
+// fallow-ignore-file unused-class-member
 /**
  * StockTwits Whisperer API client (https://stocktwitsapi.com).
  *

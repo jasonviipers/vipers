@@ -169,6 +169,225 @@ function TableSkeleton({ cols }: { cols: number }) {
   );
 }
 
+// -- Extracted inner components -------------------------------------------
+
+function PnlChart({
+  status,
+  pnlData,
+}: {
+  status: { portfolio: { totalPnl: number; dailyPnl: number } } | undefined;
+  pnlData: { time: number; value: number }[];
+}) {
+  return (
+    <div className="border-b border-border bg-card p-3 sm:p-4">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <span className="text-xs font-bold tracking-wider text-foreground">
+          P&L CURVE
+        </span>
+        <div className="flex items-center gap-4 text-xs">
+          <span className="text-muted-foreground">
+            TOTAL{" "}
+            {status ? (
+              <PnlText value={status.portfolio.totalPnl} />
+            ) : (
+              <span className="font-bold text-muted-foreground">—</span>
+            )}
+          </span>
+          <span className="text-muted-foreground">
+            TODAY{" "}
+            {status ? (
+              <PnlText value={status.portfolio.dailyPnl} />
+            ) : (
+              <span className="font-bold text-muted-foreground">—</span>
+            )}
+          </span>
+        </div>
+      </div>
+      {pnlData.length >= 2 ? (
+        <LightweightTimeSeriesChart
+          type="area"
+          data={pnlData}
+          color="#00d4aa"
+          areaTopColor="#00d4aa33"
+          areaBottomColor="#00d4aa00"
+          height={144}
+          valueFormat={(value) => fmtPnl(value)}
+        />
+      ) : (
+        <div
+          className="flex items-center justify-center border border-dashed border-border text-xs text-terminal-dim"
+          style={{ height: 144 }}
+        >
+          NO SNAPSHOTS YET — the curve fills in as the portfolio runs
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TabBar({
+  tab,
+  onChange,
+  openCount,
+  closedCount,
+  netPnl,
+}: {
+  tab: Tab;
+  onChange: (t: Tab) => void;
+  openCount: number;
+  closedCount: number;
+  netPnl: number;
+}) {
+  return (
+    <div className="flex items-center gap-px border-b border-border bg-card px-4">
+      {(["OPEN", "CLOSED"] as const).map((t) => (
+        <button
+          key={t}
+          type="button"
+          onClick={() => onChange(t)}
+          className={`px-4 py-2 text-xs tracking-wider transition-colors ${
+            tab === t
+              ? "border-b-2 border-terminal-green text-terminal-green"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {t} ({t === "OPEN" ? openCount : closedCount})
+        </button>
+      ))}
+      <div className="ml-auto flex items-center gap-4 text-xs">
+        <span className="text-muted-foreground">
+          NET P&L <PnlText value={netPnl} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function PositionsTable({
+  tab,
+  isPending,
+  isError,
+  rows,
+  columnCount,
+}: {
+  tab: Tab;
+  isPending: boolean;
+  isError: boolean;
+  rows: PositionRow[];
+  columnCount: number;
+}) {
+  return (
+    <div className="flex-1 overflow-hidden">
+      <ScrollArea className="h-full">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-180">
+            <caption className="sr-only">
+              {tab === "OPEN"
+                ? "Open trading positions with entry price, current price, quantity, and unrealized profit/loss"
+                : "Closed trading positions with entry price, exit price, quantity, and realized profit/loss"}
+            </caption>
+            <thead className="sticky top-0 z-10 bg-card">
+              <tr className="border-b border-border text-[10px] text-muted-foreground">
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-normal tracking-wider sm:px-4"
+                >
+                  ASSET
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-normal tracking-wider sm:px-4"
+                >
+                  DIR
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
+                >
+                  ENTRY
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
+                >
+                  {tab === "OPEN" ? "CURRENT" : "EXIT"}
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
+                >
+                  QTY
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
+                >
+                  P&L
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
+                >
+                  P&L%
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-normal tracking-wider sm:px-4"
+                >
+                  AGENT
+                </th>
+                <th
+                  scope="col"
+                  className="hidden px-4 py-2 text-left font-normal tracking-wider lg:table-cell"
+                >
+                  OPENED
+                </th>
+                {tab === "CLOSED" && (
+                  <th
+                    scope="col"
+                    className="hidden px-4 py-2 text-left font-normal tracking-wider lg:table-cell"
+                  >
+                    CLOSED
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {isPending ? (
+                <TableSkeleton cols={columnCount} />
+              ) : isError ? (
+                <tr>
+                  <td
+                    colSpan={columnCount}
+                    className="px-4 py-3 text-xs text-terminal-red"
+                  >
+                    POSITIONS DATA UNAVAILABLE — retrying
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={columnCount}
+                    className="px-4 py-3 text-xs text-terminal-dim"
+                  >
+                    {tab === "OPEN"
+                      ? "NO OPEN POSITIONS — approved proposals will appear here"
+                      : "NO CLOSED TRADES YET — history appears when positions are closed"}
+                  </td>
+                </tr>
+              ) : (
+                rows.map((pos) => (
+                  <PositionTableRow key={pos.id} pos={pos} tab={tab} />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
 // -- Main view --------------------------------------------------------------
 
 export function PositionsView() {
@@ -218,184 +437,21 @@ export function PositionsView() {
   return (
     <div className="flex h-full flex-col">
       <h1 className="sr-only">Trading Positions</h1>
-
-      {/* P&L chart */}
-      <div className="border-b border-border bg-card p-3 sm:p-4">
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <span className="text-xs font-bold tracking-wider text-foreground">
-            P&L CURVE
-          </span>
-          <div className="flex items-center gap-4 text-xs">
-            <span className="text-muted-foreground">
-              TOTAL{" "}
-              {status ? (
-                <PnlText value={status.portfolio.totalPnl} />
-              ) : (
-                <span className="font-bold text-muted-foreground">—</span>
-              )}
-            </span>
-            <span className="text-muted-foreground">
-              TODAY{" "}
-              {status ? (
-                <PnlText value={status.portfolio.dailyPnl} />
-              ) : (
-                <span className="font-bold text-muted-foreground">—</span>
-              )}
-            </span>
-          </div>
-        </div>
-        {pnlData.length >= 2 ? (
-          <LightweightTimeSeriesChart
-            type="area"
-            data={pnlData}
-            color="#00d4aa"
-            areaTopColor="#00d4aa33"
-            areaBottomColor="#00d4aa00"
-            height={144}
-            valueFormat={(value) => fmtPnl(value)}
-          />
-        ) : (
-          <div
-            className="flex items-center justify-center border border-dashed border-border text-xs text-terminal-dim"
-            style={{ height: 144 }}
-          >
-            NO SNAPSHOTS YET — the curve fills in as the portfolio runs
-          </div>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-px border-b border-border bg-card px-4">
-        {(["OPEN", "CLOSED"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-xs tracking-wider transition-colors ${
-              tab === t
-                ? "border-b-2 border-terminal-green text-terminal-green"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t} ({t === "OPEN" ? openCount : closedCount})
-          </button>
-        ))}
-        <div className="ml-auto flex items-center gap-4 text-xs">
-          <span className="text-muted-foreground">
-            NET P&L <PnlText value={netPnl} />
-          </span>
-        </div>
-      </div>
-
-      {/* Positions table */}
-      <div className="flex-1 overflow-hidden">
-        <ScrollArea className="h-full">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-180">
-              <caption className="sr-only">
-                {tab === "OPEN"
-                  ? "Open trading positions with entry price, current price, quantity, and unrealized profit/loss"
-                  : "Closed trading positions with entry price, exit price, quantity, and realized profit/loss"}
-              </caption>
-              <thead className="sticky top-0 z-10 bg-card">
-                <tr className="border-b border-border text-[10px] text-muted-foreground">
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-left font-normal tracking-wider sm:px-4"
-                  >
-                    ASSET
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-left font-normal tracking-wider sm:px-4"
-                  >
-                    DIR
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
-                  >
-                    ENTRY
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
-                  >
-                    {tab === "OPEN" ? "CURRENT" : "EXIT"}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
-                  >
-                    QTY
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
-                  >
-                    P&L
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-right font-normal tracking-wider sm:px-4"
-                  >
-                    P&L%
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-left font-normal tracking-wider sm:px-4"
-                  >
-                    AGENT
-                  </th>
-                  <th
-                    scope="col"
-                    className="hidden px-4 py-2 text-left font-normal tracking-wider lg:table-cell"
-                  >
-                    OPENED
-                  </th>
-                  {tab === "CLOSED" && (
-                    <th
-                      scope="col"
-                      className="hidden px-4 py-2 text-left font-normal tracking-wider lg:table-cell"
-                    >
-                      CLOSED
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {isPending ? (
-                  <TableSkeleton cols={columnCount} />
-                ) : isError ? (
-                  <tr>
-                    <td
-                      colSpan={columnCount}
-                      className="px-4 py-3 text-xs text-terminal-red"
-                    >
-                      POSITIONS DATA UNAVAILABLE — retrying
-                    </td>
-                  </tr>
-                ) : rows.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={columnCount}
-                      className="px-4 py-3 text-xs text-terminal-dim"
-                    >
-                      {tab === "OPEN"
-                        ? "NO OPEN POSITIONS — approved proposals will appear here"
-                        : "NO CLOSED TRADES YET — history appears when positions are closed"}
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((pos) => (
-                    <PositionTableRow key={pos.id} pos={pos} tab={tab} />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </ScrollArea>
-      </div>
+      <PnlChart status={status} pnlData={pnlData} />
+      <TabBar
+        tab={tab}
+        onChange={setTab}
+        openCount={openCount}
+        closedCount={closedCount}
+        netPnl={netPnl}
+      />
+      <PositionsTable
+        tab={tab}
+        isPending={isPending}
+        isError={isError}
+        rows={rows}
+        columnCount={columnCount}
+      />
     </div>
   );
 }

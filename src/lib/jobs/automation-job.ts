@@ -29,7 +29,7 @@ import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 const AUTOMATION_ASSETS = ["BTC", "ETH", "SOL", "XRP", "DOGE"] as const;
 
-export type AutomationTickResult =
+type AutomationTickResult =
   | { action: "ran"; asset: string; orderStatus: string }
   | { action: "skipped"; reason: string }
   | { action: "failed"; asset: string; reason: string };
@@ -51,7 +51,7 @@ async function isKillSwitchArmed(): Promise<boolean> {
  * manual trigger route) can report it. Never throws — every failure mode is
  * a logged result.
  */
-export async function runAutomationTick(): Promise<AutomationTickResult> {
+async function runAutomationTick(): Promise<AutomationTickResult> {
   if (inFlight) {
     return { action: "skipped", reason: "previous pass still running" };
   }

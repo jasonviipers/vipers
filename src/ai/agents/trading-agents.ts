@@ -4,6 +4,7 @@ import { generateText, type ToolSet } from "ai";
 
 import { resolveActiveModelInfo } from "@/lib/llm-model";
 import { recordLlmUsage } from "@/lib/llm-usage";
+import { resolveSearchTool } from "../tools/search-tool";
 import {
   fetchMarketQuoteTool,
   gatherStockTwitsSentimentTool,
@@ -13,39 +14,39 @@ import {
 } from "../tools/trading-tools";
 import { reasoningAnalysisAgentConfig } from "./config";
 
-export interface AgentGenerateResult {
+interface AgentGenerateResult {
   text: string;
-  /** Which provider the generation actually ran on. */
   provider: string;
-  /** The model id the provider reported ("unknown" when unavailable). */
   resolvedModelId: string;
+  sources?: unknown[];
 }
 
-// fallow-ignore-next-line unused-export
-export class TradingAgent {
+class TradingAgent {
   constructor(
     readonly id: string,
     readonly instructions: string,
     private readonly tools: ToolSet = {},
+    private readonly useSearch: boolean = false,
   ) {}
 
   async generate(prompt: string): Promise<AgentGenerateResult> {
     const correlationId = randomUUID();
-    // Resolved through the same fallback chain the call uses, so metadata
-    // records the provider that ACTUALLY ran, not the one configured. The
-    // agent id is passed through so a per-agent provider override (set in
-    // /settings → AGENT CONFIGURATION) pins this agent to its own model.
     const { model, provider } = await resolveActiveModelInfo(this.id);
+
+    const tools = this.useSearch
+      ? { ...this.tools, ...resolveSearchTool(provider) }
+      : this.tools;
+
     const result = await generateText({
       model,
       instructions: this.instructions,
       prompt,
-      tools: this.tools,
+      tools,
       maxOutputTokens: 600,
       timeout: { totalMs: 45_000 },
     });
 
-    const resolvedModelId = result.response?.modelId ?? "unknown";
+    const resolvedModelId = result.finalStep.response?.modelId ?? "unknown";
     const usage = result.usage;
     if (usage) {
       recordLlmUsage({
@@ -58,7 +59,12 @@ export class TradingAgent {
       });
     }
 
-    return { provider, resolvedModelId, text: result.text };
+    return {
+      provider,
+      resolvedModelId,
+      sources: result.sources,
+      text: result.text,
+    };
   }
 }
 
@@ -83,4 +89,5 @@ If your decision is ABSTAIN, do not emit this object — state plainly that you 
     scrapeReddit: scrapeRedditTool,
     scrapeTwitter: scrapeTwitterTool,
   },
+  reasoningAnalysisAgentConfig.search,
 );

@@ -235,9 +235,11 @@ function ChipPicker({
   selected: string[];
   onChange: (v: string[]) => void;
 }) {
+  const activeSet = new Set(selected);
+
   function toggle(opt: string) {
     onChange(
-      selected.includes(opt)
+      activeSet.has(opt)
         ? selected.filter((s) => s !== opt)
         : [...selected, opt],
     );
@@ -250,7 +252,7 @@ function ChipPicker({
       </span>
       <div className="flex flex-wrap gap-1">
         {options.map((opt) => {
-          const active = selected.includes(opt);
+          const active = activeSet.has(opt);
           return (
             <button
               key={opt}
@@ -295,7 +297,11 @@ function TerminalInput({
         <input
           type="number"
           value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
+          aria-label={label}
+          onChange={(e) => {
+            const n = e.target.value === "" ? 0 : Number(e.target.value);
+            if (!Number.isNaN(n)) onChange(n);
+          }}
           className={`w-full bg-transparent text-xs font-bold outline-none ${color ?? "text-foreground"}`}
         />
         {suffix && (
@@ -362,6 +368,7 @@ function DeleteConfirm({
           <button
             type="button"
             onClick={onCancel}
+            aria-label="Close delete confirmation"
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <X className="h-3.5 w-3.5" />
@@ -424,6 +431,7 @@ function TemplatePickerModal({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close template picker"
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <X className="h-3.5 w-3.5" />
@@ -600,6 +608,7 @@ function StrategyFormModal({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close strategy form"
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <X className="h-3.5 w-3.5" />
@@ -882,6 +891,173 @@ function StrategyCard({
   );
 }
 
+// -- Extracted inner components -------------------------------------------
+
+function StrategiesToolbar({
+  isPending,
+  isError,
+  count,
+  activeCount,
+  onNew,
+}: {
+  isPending: boolean;
+  isError: boolean;
+  count: number;
+  activeCount: number;
+  onNew: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-3 py-2 sm:px-4">
+      <div className="flex items-center gap-3">
+        <h1 className="text-xs font-bold tracking-wider text-foreground">
+          STRATEGY MANAGER
+        </h1>
+        <span className="text-[10px] text-muted-foreground">
+          {isPending
+            ? "loading..."
+            : isError
+              ? "offline"
+              : `${count} strategies`}
+        </span>
+        {!isPending && !isError && (
+          <span className="text-[10px] text-terminal-green">
+            {activeCount} active
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onNew}
+        className="flex items-center gap-1.5 bg-terminal-green/10 border border-terminal-green/30 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-terminal-green transition-colors hover:bg-terminal-green/20"
+      >
+        <Plus className="h-3 w-3" />
+        New Strategy
+      </button>
+    </div>
+  );
+}
+
+function StrategiesCardGrid({
+  isPending,
+  isError,
+  strategies,
+  onEdit,
+  onDelete,
+  onToggle,
+  onNew,
+}: {
+  isPending: boolean;
+  isError: boolean;
+  strategies: StrategyDto[];
+  onEdit: (strategy: StrategyDto) => void;
+  onDelete: (strategy: StrategyDto) => void;
+  onToggle: (strategy: StrategyDto) => void;
+  onNew: () => void;
+}) {
+  return (
+    <ScrollArea className="flex-1">
+      {isPending ? (
+        <div className="grid grid-cols-1 gap-px p-px lg:grid-cols-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-40 animate-pulse bg-secondary m-px" />
+          ))}
+        </div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center py-20 text-terminal-red">
+          <span className="text-xs uppercase tracking-wider">
+            STRATEGIES DATA UNAVAILABLE — retrying
+          </span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-px p-px lg:grid-cols-2">
+          {strategies.map((strategy) => (
+            <StrategyCard
+              key={strategy.id}
+              strategy={strategy}
+              onEdit={() => onEdit(strategy)}
+              onDelete={() => onDelete(strategy)}
+              onToggle={() => onToggle(strategy)}
+            />
+          ))}
+        </div>
+      )}
+
+      {!isPending && !isError && strategies.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+          <span className="text-xs uppercase tracking-wider">
+            No strategies configured
+          </span>
+          <button
+            type="button"
+            onClick={onNew}
+            className="mt-3 text-xs text-terminal-green hover:underline"
+          >
+            Create your first strategy
+          </button>
+        </div>
+      )}
+    </ScrollArea>
+  );
+}
+
+function StrategiesModals({
+  modal,
+  onPickTemplate,
+  onClose,
+  fetchCreateInitial,
+  onSaveCreate,
+  onSaveUpdate,
+  onConfirmDelete,
+}: {
+  modal:
+    | { mode: "template" }
+    | { mode: "create"; template?: StrategyTemplate }
+    | { mode: "edit"; strategy: StrategyDto }
+    | { mode: "delete"; strategy: StrategyDto }
+    | null;
+  onPickTemplate: (template: StrategyTemplate | null) => void;
+  onClose: () => void;
+  fetchCreateInitial: () => Promise<StrategyInput>;
+  onSaveCreate: (data: StrategyInput) => void;
+  onSaveUpdate: (data: StrategyInput) => void;
+  onConfirmDelete: () => void;
+}) {
+  return (
+    <>
+      {modal?.mode === "template" && (
+        <TemplatePickerModal onSelect={onPickTemplate} onClose={onClose} />
+      )}
+      {modal?.mode === "create" && (
+        <AsyncStrategyFormModal
+          title={
+            modal.template
+              ? `CREATE FROM TEMPLATE // ${modal.template.name.toUpperCase()}`
+              : "CREATE NEW STRATEGY"
+          }
+          fetchInitial={fetchCreateInitial}
+          onSave={onSaveCreate}
+          onClose={onClose}
+        />
+      )}
+      {modal?.mode === "edit" && (
+        <StrategyFormModal
+          title={`EDIT // ${modal.strategy.name}`}
+          initial={strategyToInput(modal.strategy)}
+          onSave={onSaveUpdate}
+          onClose={onClose}
+        />
+      )}
+      {modal?.mode === "delete" && (
+        <DeleteConfirm
+          strategy={modal.strategy}
+          onConfirm={onConfirmDelete}
+          onCancel={onClose}
+        />
+      )}
+    </>
+  );
+}
+
 // -- Main view --------------------------------------------------------------
 
 export function StrategiesView() {
@@ -940,34 +1116,13 @@ export function StrategiesView() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-3 py-2 sm:px-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xs font-bold tracking-wider text-foreground">
-            STRATEGY MANAGER
-          </h1>
-          <span className="text-[10px] text-muted-foreground">
-            {isPending
-              ? "loading..."
-              : isError
-                ? "offline"
-                : `${strategies.length} strategies`}
-          </span>
-          {!isPending && !isError && (
-            <span className="text-[10px] text-terminal-green">
-              {activeCount} active
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => setModal({ mode: "template" })}
-          className="flex items-center gap-1.5 bg-terminal-green/10 border border-terminal-green/30 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-terminal-green transition-colors hover:bg-terminal-green/20"
-        >
-          <Plus className="h-3 w-3" />
-          New Strategy
-        </button>
-      </div>
+      <StrategiesToolbar
+        isPending={isPending}
+        isError={isError}
+        count={strategies.length}
+        activeCount={activeCount}
+        onNew={() => setModal({ mode: "template" })}
+      />
 
       {/* Mutation error banner (optimistic updates roll back silently) */}
       {mutationError && (
@@ -980,91 +1135,27 @@ export function StrategiesView() {
         </div>
       )}
 
-      {/* Cards grid */}
-      <ScrollArea className="flex-1">
-        {isPending ? (
-          <div className="grid grid-cols-1 gap-px p-px lg:grid-cols-2">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-40 animate-pulse bg-secondary m-px" />
-            ))}
-          </div>
-        ) : isError ? (
-          <div className="flex flex-col items-center justify-center py-20 text-terminal-red">
-            <span className="text-xs uppercase tracking-wider">
-              STRATEGIES DATA UNAVAILABLE — retrying
-            </span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-px p-px lg:grid-cols-2">
-            {strategies.map((strategy) => (
-              <StrategyCard
-                key={strategy.id}
-                strategy={strategy}
-                onEdit={() => setModal({ mode: "edit", strategy })}
-                onDelete={() => setModal({ mode: "delete", strategy })}
-                onToggle={() =>
-                  toggleMutation.mutate({
-                    id: strategy.id,
-                    active: !strategy.active,
-                  })
-                }
-              />
-            ))}
-          </div>
-        )}
+      <StrategiesCardGrid
+        isPending={isPending}
+        isError={isError}
+        strategies={strategies}
+        onEdit={(s) => setModal({ mode: "edit", strategy: s })}
+        onDelete={(s) => setModal({ mode: "delete", strategy: s })}
+        onToggle={(s) => toggleMutation.mutate({ id: s.id, active: !s.active })}
+        onNew={() => setModal({ mode: "template" })}
+      />
 
-        {!isPending && !isError && strategies.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-            <span className="text-xs uppercase tracking-wider">
-              No strategies configured
-            </span>
-            <button
-              type="button"
-              onClick={() => setModal({ mode: "template" })}
-              className="mt-3 text-xs text-terminal-green hover:underline"
-            >
-              Create your first strategy
-            </button>
-          </div>
-        )}
-      </ScrollArea>
-
-      {/* Modals */}
-      {modal?.mode === "template" && (
-        <TemplatePickerModal
-          onSelect={(t) =>
-            setModal({ mode: "create", template: t ?? undefined })
-          }
-          onClose={() => setModal(null)}
-        />
-      )}
-      {modal?.mode === "create" && (
-        <AsyncStrategyFormModal
-          title={
-            modal.template
-              ? `CREATE FROM TEMPLATE // ${modal.template.name.toUpperCase()}`
-              : "CREATE NEW STRATEGY"
-          }
-          fetchInitial={createFetchInitial}
-          onSave={handleCreate}
-          onClose={() => setModal(null)}
-        />
-      )}
-      {modal?.mode === "edit" && (
-        <StrategyFormModal
-          title={`EDIT // ${modal.strategy.name}`}
-          initial={strategyToInput(modal.strategy)}
-          onSave={handleUpdate}
-          onClose={() => setModal(null)}
-        />
-      )}
-      {modal?.mode === "delete" && (
-        <DeleteConfirm
-          strategy={modal.strategy}
-          onConfirm={handleDelete}
-          onCancel={() => setModal(null)}
-        />
-      )}
+      <StrategiesModals
+        modal={modal}
+        onPickTemplate={(t) =>
+          setModal({ mode: "create", template: t ?? undefined })
+        }
+        onClose={() => setModal(null)}
+        fetchCreateInitial={createFetchInitial}
+        onSaveCreate={handleCreate}
+        onSaveUpdate={handleUpdate}
+        onConfirmDelete={handleDelete}
+      />
     </div>
   );
 }

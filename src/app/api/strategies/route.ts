@@ -18,9 +18,7 @@ import { requireWriteAccess } from "@/lib/route-auth";
 export const dynamic = "force-dynamic";
 
 /** Create the strategy row plus its normalized asset/source children. */
-export async function insertStrategy(
-  input: StrategyInput,
-): Promise<StrategyDto> {
+async function insertStrategy(input: StrategyInput): Promise<StrategyDto> {
   const [row] = await db
     .insert(strategies)
     .values({
@@ -77,22 +75,21 @@ export const GET = withEvlog(async () => {
   logger.set({ integration: "strategies" });
 
   try {
-    const rows = await db
-      .select()
-      .from(strategies)
-      .orderBy(desc(strategies.createdAt));
-    const assetRows = await db
-      .select({
-        asset: strategyAssets.asset,
-        strategyId: strategyAssets.strategyId,
-      })
-      .from(strategyAssets);
-    const sourceRows = await db
-      .select({
-        source: strategySignalSources.source,
-        strategyId: strategySignalSources.strategyId,
-      })
-      .from(strategySignalSources);
+    const [rows, assetRows, sourceRows] = await Promise.all([
+      db.select().from(strategies).orderBy(desc(strategies.createdAt)),
+      db
+        .select({
+          asset: strategyAssets.asset,
+          strategyId: strategyAssets.strategyId,
+        })
+        .from(strategyAssets),
+      db
+        .select({
+          source: strategySignalSources.source,
+          strategyId: strategySignalSources.strategyId,
+        })
+        .from(strategySignalSources),
+    ]);
 
     const items: StrategyDto[] = rows.map((row) => ({
       active: row.active,

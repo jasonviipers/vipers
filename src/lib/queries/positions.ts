@@ -15,7 +15,7 @@ export interface OpenPosition {
   openedAt: string;
 }
 
-export interface OpenPositionsResponse {
+interface OpenPositionsResponse {
   items: OpenPosition[];
 }
 
@@ -35,16 +35,16 @@ export interface ClosedPosition {
   closedAt: string;
 }
 
-export interface ClosedPositionsResponse {
+interface ClosedPositionsResponse {
   items: ClosedPosition[];
 }
 
-export const openPositionsKeys = {
+const openPositionsKeys = {
   all: ["positions-open"] as const,
   list: () => [...openPositionsKeys.all, "list"] as const,
 };
 
-export const closedPositionsKeys = {
+const closedPositionsKeys = {
   all: ["positions-closed"] as const,
   list: () => [...closedPositionsKeys.all, "list"] as const,
 };

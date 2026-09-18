@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-export interface TradeActivityBucket {
+interface TradeActivityBucket {
   /** Bucket end, ISO string. */
   time: string;
   /** Trade count in the bucket. */
@@ -9,14 +9,14 @@ export interface TradeActivityBucket {
   net: number;
 }
 
-export interface TradeActivityResponse {
+interface TradeActivityResponse {
   buckets: TradeActivityBucket[];
   /** "db" = positions table, "events" = runtime event-buffer fallback. */
   source: "db" | "events";
   windowHours: number;
 }
 
-export const tradeActivityKeys = {
+const tradeActivityKeys = {
   all: ["trades-activity"] as const,
   hourly: () => [...tradeActivityKeys.all, "hourly"] as const,
 };

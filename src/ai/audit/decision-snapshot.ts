@@ -176,7 +176,7 @@ export function hashDecision(snapshot: DecisionSnapshot): string {
 }
 
 /** Re-verify a stored row: recompute the hash and confirm it still matches. */
-export function verifySnapshotHash(
+function verifySnapshotHash(
   storedHash: string,
   snapshot: DecisionSnapshot,
 ): boolean {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const strategyPluginManifestSchema = z.object({
+const strategyPluginManifestSchema = z.object({
   capabilities: z.array(z.string().min(1)).min(1),
   configHash: z.string().regex(/^[a-f0-9]{64}$/),
   evidenceRequirements: z.array(z.string().min(1)).min(1),
@@ -25,7 +25,7 @@ export function validateStrategyPluginManifest(
  * its expected decisions through the isolated runtime, byte-for-byte under
  * canonical JSON equality, is not registrable.
  */
-export const strategyPluginFixtureSchema = z.object({
+const strategyPluginFixtureSchema = z.object({
   /** Named path this fixture pins (e.g. "intent-long", "abstain"). */
   name: z.string().min(1).max(80),
   /** Evidence identity bound into the decision (asset + signal ids). */

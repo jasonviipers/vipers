@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Tooltip,
@@ -12,10 +12,13 @@ import {
   type RecentSignal,
   signalActivityQueries,
 } from "@/lib/queries/signals";
-import {
-  DEFAULT_TERMINAL_SETTINGS,
-  loadTerminalSettings,
-} from "@/lib/terminal-settings";
+import { loadTerminalSettings } from "@/lib/terminal-settings";
+
+function subscribeToSettingsChanges(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("viipers:settings-changed", callback);
+  return () => window.removeEventListener("viipers:settings-changed", callback);
+}
 
 function getSourceIcon(source: RecentSignal["source"]) {
   switch (source) {
@@ -68,14 +71,14 @@ const MAX_FEED_ROWS = 30;
 
 export function SignalFeed() {
   const { data, isError, isPending } = useQuery(signalActivityQueries.recent());
-  // Threshold comes from terminal settings (localStorage), read after mount
-  // to avoid an SSR/client hydration mismatch.
-  const [threshold, setThreshold] = useState(
-    DEFAULT_TERMINAL_SETTINGS.alertThreshold,
+  // Threshold comes from terminal settings (localStorage). useSyncExternalStore
+  // reads it render-safely — hydration reconciles in one extra synchronous
+  // pre-paint pass, so there is no post-mount flash of the default threshold.
+  // The viipers:settings-changed DOM event keeps it live when /settings edits.
+  const threshold = useSyncExternalStore(
+    subscribeToSettingsChanges,
+    () => loadTerminalSettings().alertThreshold,
   );
-  useEffect(() => {
-    setThreshold(loadTerminalSettings().alertThreshold);
-  }, []);
 
   // Poll the clock so relative "time ago" labels stay fresh between fetches.
   const [now, setNow] = useState(() => Date.now());

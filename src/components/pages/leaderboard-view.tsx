@@ -119,9 +119,81 @@ function displayName(agent: AgentFleetEntry): string {
 
 // -- Champion card ----------------------------------------------------------
 
+function RankBadge({ isFirst, rank }: { isFirst: boolean; rank: number }) {
+  return (
+    <div
+      className={`absolute -top-3 left-4 flex items-center gap-1.5 px-2 py-0.5 text-xs font-bold tracking-wider ${
+        isFirst
+          ? "bg-terminal-gold/20 text-terminal-gold"
+          : rank === 2
+            ? "bg-foreground/10 text-foreground"
+            : "bg-terminal-amber/10 text-terminal-amber"
+      }`}
+    >
+      {isFirst ? <Crown className="h-3 w-3" /> : <Medal className="h-3 w-3" />}
+      {isFirst ? "REIGNING CHAMPION" : rank === 2 ? "2ND PLACE" : "3RD PLACE"}
+    </div>
+  );
+}
+
+function ChampionStatGrid({ stats }: { stats: RankedAgent["stats"] }) {
+  return (
+    <div className="mt-4 grid grid-cols-3 gap-3 text-xs sm:grid-cols-5">
+      <div className="flex flex-col">
+        <span className="text-[10px] tracking-wider text-muted-foreground">
+          P&L
+        </span>
+        <span
+          className={`font-bold ${
+            stats.pnl >= 0 ? "text-terminal-green" : "text-terminal-red"
+          }`}
+        >
+          {fmtPnl(stats.pnl)}
+        </span>
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[10px] tracking-wider text-muted-foreground">
+          ROI
+        </span>
+        <span
+          className={`font-bold ${
+            stats.roi >= 0 ? "text-terminal-green" : "text-terminal-red"
+          }`}
+        >
+          {stats.roi >= 0 ? "+" : ""}
+          {stats.roi.toFixed(1)}%
+        </span>
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[10px] tracking-wider text-muted-foreground">
+          SHARPE
+        </span>
+        <span className="font-bold text-foreground">
+          {stats.sharpe.toFixed(2)}
+        </span>
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[10px] tracking-wider text-muted-foreground">
+          WIN RATE
+        </span>
+        <span className="font-bold text-foreground">
+          {stats.winRate.toFixed(1)}%
+        </span>
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[10px] tracking-wider text-muted-foreground">
+          MDD
+        </span>
+        <span className="font-bold text-terminal-red">
+          {stats.maxDrawdown.toFixed(1)}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function ChampionCard({ agent, rank }: { agent: RankedAgent; rank: number }) {
   const isFirst = rank === 1;
-  const badge = getTeamBadge(agent.team);
 
   return (
     <div
@@ -129,23 +201,7 @@ function ChampionCard({ agent, rank }: { agent: RankedAgent; rank: number }) {
         isFirst ? "col-span-full border-terminal-gold/50" : "border-border"
       }`}
     >
-      {/* Rank badge */}
-      <div
-        className={`absolute -top-3 left-4 flex items-center gap-1.5 px-2 py-0.5 text-xs font-bold tracking-wider ${
-          isFirst
-            ? "bg-terminal-gold/20 text-terminal-gold"
-            : rank === 2
-              ? "bg-foreground/10 text-foreground"
-              : "bg-terminal-amber/10 text-terminal-amber"
-        }`}
-      >
-        {isFirst ? (
-          <Crown className="h-3 w-3" />
-        ) : (
-          <Medal className="h-3 w-3" />
-        )}
-        {isFirst ? "REIGNING CHAMPION" : rank === 2 ? "2ND PLACE" : "3RD PLACE"}
-      </div>
+      <RankBadge isFirst={isFirst} rank={rank} />
 
       <div className="mt-2 flex items-start justify-between">
         <div className="flex flex-col gap-1">
@@ -162,7 +218,7 @@ function ChampionCard({ agent, rank }: { agent: RankedAgent; rank: number }) {
             </span>
           </div>
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {badge.label} / {agent.role.replace(/_/g, " ")}
+            {getTeamBadge(agent.team).label} / {agent.role.replace(/_/g, " ")}
           </span>
         </div>
         <div className="flex flex-col items-end gap-0.5">
@@ -192,57 +248,7 @@ function ChampionCard({ agent, rank }: { agent: RankedAgent; rank: number }) {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-3 text-xs sm:grid-cols-5">
-        <div className="flex flex-col">
-          <span className="text-[10px] tracking-wider text-muted-foreground">
-            P&L
-          </span>
-          <span
-            className={`font-bold ${
-              agent.stats.pnl >= 0 ? "text-terminal-green" : "text-terminal-red"
-            }`}
-          >
-            {fmtPnl(agent.stats.pnl)}
-          </span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] tracking-wider text-muted-foreground">
-            ROI
-          </span>
-          <span
-            className={`font-bold ${
-              agent.stats.roi >= 0 ? "text-terminal-green" : "text-terminal-red"
-            }`}
-          >
-            {agent.stats.roi >= 0 ? "+" : ""}
-            {agent.stats.roi.toFixed(1)}%
-          </span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] tracking-wider text-muted-foreground">
-            SHARPE
-          </span>
-          <span className="font-bold text-foreground">
-            {agent.stats.sharpe.toFixed(2)}
-          </span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] tracking-wider text-muted-foreground">
-            WIN RATE
-          </span>
-          <span className="font-bold text-foreground">
-            {agent.stats.winRate.toFixed(1)}%
-          </span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] tracking-wider text-muted-foreground">
-            MDD
-          </span>
-          <span className="font-bold text-terminal-red">
-            {agent.stats.maxDrawdown.toFixed(1)}%
-          </span>
-        </div>
-      </div>
+      <ChampionStatGrid stats={agent.stats} />
 
       {agent.stats.equityData.length >= 2 &&
         (isFirst ? (

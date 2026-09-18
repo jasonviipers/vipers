@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { AgentGrid } from "@/components/dashboard/agent-grid";
 import { ConsensusPanel } from "@/components/dashboard/consensus-panel";
 import { EquityChart } from "@/components/dashboard/equity-chart";
@@ -9,6 +10,21 @@ import { SignalFeed } from "@/components/dashboard/signal-feed";
 import { TradesChart } from "@/components/dashboard/trades-chart";
 import { TerminalLayout } from "@/components/terminal/terminal-layout";
 import { APP_NAME } from "@/lib/constant";
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+  description:
+    "Real-time portfolio overview with equity charts, agent performance, signal analysis, and position tracking across all active trading strategies.",
+  alternates: {
+    canonical: "https://viipers.com",
+  },
+  openGraph: {
+    title: "Dashboard | Viipers",
+    description:
+      "Real-time portfolio overview with equity charts, agent performance, signal analysis, and position tracking.",
+    url: "https://viipers.com",
+  },
+};
 
 export default function Home() {
   return (

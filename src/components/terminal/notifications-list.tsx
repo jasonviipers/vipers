@@ -23,7 +23,7 @@ import type { FeedEvent } from "@/lib/queries/events";
 
 const MAX_ITEMS = 20;
 
-export const CATEGORY_META: Record<
+const CATEGORY_META: Record<
   FeedEvent["category"],
   { icon: typeof Zap; label: string; className: string }
 > = {
