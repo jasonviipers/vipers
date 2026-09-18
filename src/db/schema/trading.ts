@@ -48,7 +48,7 @@ export const runtimeSettings = pgTable("runtime_settings", {
    * localStorage preference the pipeline can ignore.
    */
   activeBrokerId: text("active_broker_id").notNull().default("okx"),
-  automationEnabled: boolean("automation_enabled").notNull().default(false),
+  automationEnabled: boolean("automation_enabled").notNull().default(true),
   /** Seconds between automatic full-pipeline passes (bounded 60–3600). */
   automationIntervalSec: integer("automation_interval_sec"),
   /** Default LLM provider for new strategies ("OPENAI"|"ANTHROPIC"|"GOOGLE"|"XAI"|"DEEPSEEK"). */

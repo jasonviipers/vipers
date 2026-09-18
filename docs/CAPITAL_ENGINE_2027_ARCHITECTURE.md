@@ -314,6 +314,69 @@ plugin draft
 
 A promotion record must include plugin commit, config hash, model/provider/version, data snapshot IDs, simulator version, risk policy, sample size, drawdown, turnover, costs, tail loss, capacity estimate, and known failure modes. Promotion is invalid if the strategy changes, evidence contract changes, or risk policy changes.
 
+### 4.6 Canary capital controls (operator reference)
+
+The canary stage is the first stage that risks REAL capital, so it runs under
+explicitly predeclared controls. All canary settings are nullable operator
+runtime settings (`runtime_settings` singleton, written via
+`PUT /api/settings/runtime`): a control the operator did not set does not
+exist — nothing is inherited from a default.
+
+**How "canary" is determined.** Controls key off persisted lineage, never
+request claims: the plugin's latest `strategy_promotions` record at stage
+`CANARY`. A plugin without promotion lineage is not a canary and is not
+capped; reaching CANARY is itself an operator action (below).
+
+**Entering canary.** Promotion `PAPER -> CANARY` runs only through
+`POST /api/strategies/plugins/[id]/promote` (`strategies:manage` permission;
+demo sessions are read-only). The promotion gate re-proves the plugin's
+deterministic fixtures in the isolated worker runtime, requires the submitted
+record to be the current lineage head, and appends the verified record. No
+code path promotes automatically.
+
+**Maximum canary allocation — `canaryMaxAllocationPct`** (percent of book,
+per order). The risk gate enforces it for canary-head plugins: the
+confidence-scaled position size is clamped under the ceiling, a proposal
+above it is refused, and when it is NOT armed, new risk for a canary plugin
+is refused outright (fail closed) — an unconfigured canary cannot trade at
+live sizing by omission. LIVE and lineage-less proposers are unaffected.
+
+**Canary loss budget — `canaryLossBudgetPct`** (percent of total capital).
+Tightens the automatic rollback loss axis for CANARY lineage heads only: the
+effective threshold is the TIGHTER of this budget and
+`rollbackMaxLossPct`. A canary-only budget never arms LIVE, and the
+drawdown axis (`rollbackMaxDrawdownPct`) is stage-agnostic.
+
+**Automatic rollback triggers — `rollbackMaxLossPct` /
+`rollbackMaxDrawdownPct`.** The strategy-rollback monitor
+(`src/lib/jobs/strategy-rollback-job.ts`, scheduled in production every
+minute) evaluates each enabled capital-bearing plugin's lineage-head metrics
+and halts breaches through the audited kill switch — reason `risk-breach`,
+operator `system:rollback-monitor` — landing the plugin in HALTED lineage
+exactly like a manual kill. Re-entry only via fixture-proofed reactivation
+into DRAFT and a fresh pass through the promotion stages. Breaches carry the
+trigger detail (metric, budget) into the append-only lineage annotation.
+
+**Canary hygiene signal.** Every monitor pass reports CANARY plugins holding
+capital with no loss budget armed (`unbudgetedCanaries` in the pass summary,
+`canary_loss_budget_not_armed` log warnings, and the `POST
+/api/jobs/strategy-rollback` `{"dryRun": true}` preview). Close these gaps
+before scaling canary capital.
+
+**Manual rollback / emergency stop hierarchy.**
+
+1. Global kill switch — `POST /api/risk/kill-switch`: halts ALL new-risk
+   order submission; protective reductions still pass.
+2. Per-plugin rollback — `POST /api/strategies/plugins/[id]/rollback`
+   (`strategies:manage`; reasons `operator` / `risk-breach` / `regulatory`):
+   halts one plugin through the same audited HALTED lineage path.
+3. Reactivation — `POST /api/strategies/plugins/[id]/reactivate`: refuses
+   drifted fixtures, resets HALTED to DRAFT only, never straight to a live
+   stage.
+
+All three are server-owned and take effect on the next pipeline pass without
+requiring the requester to stay online.
+
 ### 4.5 Integration into this repository
 
 Current strengths to preserve:

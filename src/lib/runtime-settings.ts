@@ -75,7 +75,7 @@ export interface RuntimeSettings {
 
 const RUNTIME_SETTINGS_DEFAULTS: RuntimeSettings = {
   activeBrokerId: ACTIVE_BROKER_DEFAULT,
-  automationEnabled: false,
+  automationEnabled: true,
   automationIntervalSec: 300,
   canaryLossBudgetPct: null,
   canaryMaxAllocationPct: null,

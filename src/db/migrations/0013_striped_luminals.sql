@@ -1,0 +1,1 @@
+ALTER TABLE "runtime_settings" ALTER COLUMN "automation_enabled" SET DEFAULT true;
