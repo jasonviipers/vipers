@@ -142,6 +142,25 @@ class AlpacaClient {
     return order;
   }
 
+  /**
+   * Non-throwing variant for existence probes (paper-venue verification):
+   * null means the venue answered and no order carries the id — which
+   * still proves the authenticated order-query contract round-trips.
+   * HTTP/auth/transport failures still throw.
+   */
+  async findOrderByClientOrderId(
+    clientOrderId: string,
+  ): Promise<AlpacaOrder | null> {
+    const orders = await this.request<AlpacaOrder[]>("GET", "/v2/orders", {
+      query: {
+        client_order_id: clientOrderId,
+        limit: "1",
+        status: "all",
+      },
+    });
+    return orders[0] ?? null;
+  }
+
   /** All current positions (optionally one symbol, e.g. "BTC/USD"). */
   async getPositions(symbol?: string): Promise<AlpacaPosition[]> {
     if (symbol) {
