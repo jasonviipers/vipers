@@ -11,6 +11,7 @@ import { StatusBar } from "./status-bar";
 import { TerminalBottomNav } from "./terminal-bottom-nav";
 import { TerminalHeader } from "./terminal-header";
 import { TickerBar } from "./ticker-bar";
+import { WebMCPTools } from "./webmcp-tools";
 
 /**
  * Ask the server whether a signed session cookie exists; the cookie itself is
@@ -112,6 +113,7 @@ export function TerminalLayout({ children }: { children: React.ReactNode }) {
       }`}
     >
       {tickerEnabled && <TickerBar />}
+      {authenticated && <WebMCPTools />}
       <TerminalHeader onSignOut={handleSignOut} />
       <main id="main-content" className="flex-1 overflow-auto">
         {children}
