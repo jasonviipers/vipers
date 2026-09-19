@@ -96,7 +96,7 @@ export function TerminalLayout({ children }: { children: React.ReactNode }) {
 
   if (authenticated === null) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex h-dvh items-center justify-center bg-background">
         <span className="text-xs uppercase tracking-widest text-muted-foreground animate-pulse">
           Initializing terminal...
         </span>
@@ -104,11 +104,15 @@ export function TerminalLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // h-dvh (not h-screen) on the shell below: on mobile, 100vh sizes to the
+  // LARGEST viewport, so the flex column's last child — the status bar —
+  // sits below the visible fold whenever the address bar is shown. Dynamic
+  // viewport height keeps the bar pinned to the actual bottom edge.
   return (
     <div
       onPointerDown={unlockAudio}
       data-animations={animations ? "on" : "off"}
-      className={`flex h-screen flex-col overflow-hidden bg-background ${
+      className={`flex h-dvh flex-col overflow-hidden bg-background ${
         compact ? "[&_span]:!text-[11px]!" : ""
       }`}
     >
