@@ -104,7 +104,7 @@ export function LightweightTimeSeriesChart({
     <div
       ref={containerRef}
       className={className}
-      style={{ height }}
+      style={{ height, position: "relative" }}
       role="img"
       aria-label="Interactive time series chart"
     />

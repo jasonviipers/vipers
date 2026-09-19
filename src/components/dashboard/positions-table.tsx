@@ -41,7 +41,11 @@ export function PositionsTable() {
           {isPending ? "..." : `${openPositions.length} active`}
         </span>
       </div>
-      <div className="overflow-x-auto">
+      {/* relative: the sr-only caption is position:absolute (table caption
+          quirk); without a positioned ancestor its containing block is the
+          initial containing block and it extends the DOCUMENT scroll height
+          far below the overflow-hidden terminal shell. */}
+      <div className="relative overflow-x-auto">
         <table className="w-full min-w-[600px]">
           <caption className="sr-only">
             Open trading positions with entry price, current price, quantity,

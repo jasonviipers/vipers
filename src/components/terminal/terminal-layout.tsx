@@ -104,22 +104,21 @@ export function TerminalLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // h-dvh (not h-screen) on the shell below: on mobile, 100vh sizes to the
-  // LARGEST viewport, so the flex column's last child — the status bar —
-  // sits below the visible fold whenever the address bar is shown. Dynamic
-  // viewport height keeps the bar pinned to the actual bottom edge.
   return (
     <div
       onPointerDown={unlockAudio}
       data-animations={animations ? "on" : "off"}
-      className={`flex h-dvh flex-col overflow-hidden bg-background ${
+      className={`relative isolate flex h-dvh flex-col overflow-hidden bg-background ${
         compact ? "[&_span]:!text-[11px]!" : ""
       }`}
     >
       {tickerEnabled && <TickerBar />}
       {authenticated && <WebMCPTools />}
       <TerminalHeader onSignOut={handleSignOut} />
-      <main id="main-content" className="flex-1 overflow-auto">
+      <main
+        id="main-content"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      >
         {children}
       </main>
       <TerminalBottomNav />

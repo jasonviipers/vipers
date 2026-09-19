@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useColorScheme } from "@/context/color-scheme-context";
+import { fmtDollar } from "@/lib/format";
 import { agentsDbQueries } from "@/lib/queries/agents-db";
 
 type SortKey = "pnl" | "roi" | "winRate" | "trades" | "name";
@@ -229,7 +230,7 @@ export function AgentGrid() {
                     className={`text-right ${agent.stats.pnl >= 0 ? "text-terminal-green" : "text-terminal-red"}`}
                   >
                     {agent.stats.pnl >= 0 ? "+" : ""}
-                    {(agent.stats.pnl / 1000).toFixed(1)}k
+                    {fmtDollar(Math.abs(agent.stats.pnl) / 1000)}k
                   </span>
                   <span
                     className={`text-right ${agent.stats.roi >= 0 ? "text-terminal-green" : "text-terminal-red"}`}

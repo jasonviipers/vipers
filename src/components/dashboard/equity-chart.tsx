@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useColorScheme } from "@/context/color-scheme-context";
-import { fmtInt } from "@/lib/format";
+import { fmtDollar } from "@/lib/format";
 import { statusQueries } from "@/lib/queries/status";
 
 const WIDTH = 560;
@@ -84,7 +84,7 @@ function ErrorState() {
 function EmptyState() {
   return (
     <div
-      className="flex items-center justify-center border border-dashed border-border text-xs text-terminal-dim"
+      className="flex items-center justify-center border border-dashed border-border px-4 text-center text-xs text-terminal-dim"
       style={{ height: HEIGHT }}
     >
       NO SNAPSHOTS YET — rollups appear as the portfolio runs
@@ -146,10 +146,10 @@ function ChartStats({ peak, avg, trendPct }: EquityStats) {
     <div className="mt-2 flex items-center justify-end gap-4 text-xs">
       <span className="text-muted-foreground">
         PEAK{" "}
-        <span className="font-bold text-terminal-green">${fmtInt(peak)}</span>
+        <span className="font-bold text-terminal-green">{fmtDollar(peak)}</span>
       </span>
       <span className="text-muted-foreground">
-        AVG <span className="font-bold text-foreground">${fmtInt(avg)}</span>
+        AVG <span className="font-bold text-foreground">{fmtDollar(avg)}</span>
       </span>
       <span className="text-muted-foreground">
         TREND{" "}
@@ -186,7 +186,7 @@ export function EquityChart() {
           EQUITY CURVE
         </h2>
         <span className="text-xs text-terminal-green">
-          {isPending ? "--" : `$${fmtInt(stats.peak)}`}
+          {isPending ? "--" : fmtDollar(stats.peak)}
         </span>
       </div>
       <div className="p-4">

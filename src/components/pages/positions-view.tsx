@@ -215,7 +215,7 @@ function PnlChart({
         />
       ) : (
         <div
-          className="flex items-center justify-center border border-dashed border-border text-xs text-terminal-dim"
+          className="flex items-center justify-center border border-dashed border-border px-4 text-center text-xs text-terminal-dim"
           style={{ height: 144 }}
         >
           NO SNAPSHOTS YET — the curve fills in as the portfolio runs
@@ -279,7 +279,7 @@ function PositionsTable({
   return (
     <div className="flex-1 overflow-hidden">
       <ScrollArea className="h-full">
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-180">
             <caption className="sr-only">
               {tab === "OPEN"
