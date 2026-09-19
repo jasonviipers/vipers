@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { useColorScheme } from "@/context/color-scheme-context";
 import { fmtDollar } from "@/lib/format";
 import { statusQueries } from "@/lib/queries/status";
@@ -167,7 +168,8 @@ function ChartStats({ peak, avg, trendPct }: EquityStats) {
 export function EquityChart() {
   const { definition } = useColorScheme();
   const accentColor = definition.colors.green;
-  const { data, isError, isPending } = useQuery(statusQueries.summary());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(statusQueries.summary(authed));
   const points = data?.portfolio.equityHistory ?? [];
 
   const hasData = points.length >= 2;

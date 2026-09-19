@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import {
   Tooltip,
   TooltipContent,
@@ -22,7 +23,8 @@ function getStatusBadge(status: string) {
 }
 
 export function ConsensusPanel() {
-  const { data, isError, isPending } = useQuery(consensusQueries.list());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(consensusQueries.list(authed));
 
   const proposals = data?.items ?? [];
 

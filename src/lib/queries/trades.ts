@@ -30,8 +30,9 @@ async function fetchJson<T>(input: string): Promise<T> {
 }
 
 export const tradeActivityQueries = {
-  hourly: () =>
+  hourly: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: tradeActivityKeys.hourly(),
       queryFn: () => fetchJson<TradeActivityResponse>("/api/trades/activity"),
       refetchInterval: 60_000,

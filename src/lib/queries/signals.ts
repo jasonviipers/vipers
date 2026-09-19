@@ -49,8 +49,9 @@ async function fetchJson<T>(input: string): Promise<T> {
 
 export const signalActivityQueries = {
   /** 60s poll; the window is 24h so minute-level freshness is plenty. */
-  hourly: () =>
+  hourly: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: signalActivityKeys.hourly(),
       queryFn: () => fetchJson<SignalActivityResponse>("/api/signals/activity"),
       refetchInterval: 60_000,
@@ -58,8 +59,9 @@ export const signalActivityQueries = {
     }),
 
   /** Newest signals for the dashboard SignalFeed; newest-first. */
-  recent: () =>
+  recent: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: signalActivityKeys.recent(),
       queryFn: () => fetchJson<RecentSignalsResponse>("/api/signals/recent"),
       refetchInterval: 30_000,

@@ -32,8 +32,9 @@ async function fetchJson<T>(input: string): Promise<T> {
 
 export const feedQueries = {
   /** 10s poll: the feed is process-local runtime events, not DB history. */
-  recent: () =>
+  recent: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: feedKeys.recent(),
       queryFn: () => fetchJson<FeedResponse>("/api/events/recent"),
       refetchInterval: 10_000,

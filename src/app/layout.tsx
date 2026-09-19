@@ -97,7 +97,7 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-const jsonLd = {
+const _jsonLd = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
   name: "viipers",

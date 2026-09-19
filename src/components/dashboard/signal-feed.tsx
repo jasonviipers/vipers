@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Tooltip,
@@ -70,7 +71,10 @@ function formatTimeAgo(date: Date, nowMs: number) {
 const MAX_FEED_ROWS = 30;
 
 export function SignalFeed() {
-  const { data, isError, isPending } = useQuery(signalActivityQueries.recent());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(
+    signalActivityQueries.recent(authed),
+  );
   // Threshold comes from terminal settings (localStorage). useSyncExternalStore
   // reads it render-safely — hydration reconciles in one extra synchronous
   // pre-paint pass, so there is no post-mount flash of the default threshold.

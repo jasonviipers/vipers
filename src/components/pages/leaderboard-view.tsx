@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { Sparkline } from "@/components/dashboard/sparkline";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { fmtPnl } from "@/lib/format";
 import { type AgentFleetEntry, agentsDbQueries } from "@/lib/queries/agents-db";
@@ -429,7 +430,8 @@ const RANKED_TABLE_HEADER = (
 // -- Main view --------------------------------------------------------------
 
 export function LeaderboardView() {
-  const { data, isError, isPending } = useQuery(agentsDbQueries.fleet());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(agentsDbQueries.fleet(authed));
 
   const ranked = useMemo(
     () =>

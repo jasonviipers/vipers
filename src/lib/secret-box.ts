@@ -99,7 +99,7 @@ export function openSecret(blob: string): string | null {
 }
 
 /** True when the ciphertext was produced under the current key. */
-function isSealedByCurrentKey(blob: string): boolean {
+function _isSealedByCurrentKey(blob: string): boolean {
   return openSecret(blob) !== null;
 }
 
@@ -108,6 +108,6 @@ function isSealedByCurrentKey(blob: string): boolean {
  * older build without encryption). Plaintext OKX keys start with patterned
  * prefixes; a v1 blob always starts with "v1.".
  */
-function looksPlaintext(value: string): boolean {
+function _looksPlaintext(value: string): boolean {
   return !value.startsWith("v1.");
 }

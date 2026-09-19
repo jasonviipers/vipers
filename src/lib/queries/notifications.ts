@@ -50,8 +50,11 @@ function authHeaders(): Record<string, string> {
 }
 
 export const notificationQueries = {
-  readState: () =>
+  readState: (enabled = true) =>
     queryOptions({
+      // Local-only mode (no session) resolves to an empty result without a
+      // request; signed-out is an expected state, never an error.
+      enabled,
       queryKey: notificationKeys.readState(),
       queryFn: async ({ signal }) => {
         if (!getClientSession()) {

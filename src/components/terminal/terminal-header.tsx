@@ -6,6 +6,7 @@ import {
   Bot,
   LayoutGrid,
   LogOut,
+  Radio,
   Settings,
   Shield,
   Target,
@@ -17,6 +18,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ActiveBrokerSwitcher } from "@/components/settings/broker-accounts";
 import { NotificationBell } from "@/components/terminal/notification-bell";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { APP_NAME } from "@/lib/constant";
 import { agentsDbQueries } from "@/lib/queries/agents-db";
 
@@ -26,6 +28,7 @@ const NAV_ITEMS = [
   { href: "/signals", label: "SIGNALS", icon: Zap },
   { href: "/positions", label: "POSITIONS", icon: Target },
   { href: "/strategies", label: "STRATEGIES", icon: LayoutGrid },
+  { href: "/channels", label: "CHANNELS", icon: Radio },
   { href: "/consensus", label: "CONSENSUS", icon: Shield },
   { href: "/leaderboard", label: "LEADERBOARD", icon: Trophy },
   { href: "/settings", label: "SETTINGS", icon: Settings },
@@ -33,7 +36,8 @@ const NAV_ITEMS = [
 
 export function TerminalHeader({ onSignOut }: { onSignOut?: () => void }) {
   const pathname = usePathname();
-  const { data: fleet } = useQuery(agentsDbQueries.fleet());
+  const authed = useTerminalAuthenticated();
+  const { data: fleet } = useQuery(agentsDbQueries.fleet(authed));
   const onlineCount = fleet?.onlineCount ?? 0;
   const totalAgents = fleet?.total ?? 0;
 

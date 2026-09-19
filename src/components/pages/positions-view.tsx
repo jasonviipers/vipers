@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { LightweightTimeSeriesChart } from "@/components/charts/lightweight-time-series-chart";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { fmtDollar, fmtPnl } from "@/lib/format";
 import {
@@ -391,19 +392,20 @@ function PositionsTable({
 // -- Main view --------------------------------------------------------------
 
 export function PositionsView() {
+  const authed = useTerminalAuthenticated();
   const [tab, setTab] = useState<Tab>("OPEN");
 
   const {
     data: openData,
     isError: openError,
     isPending: openPending,
-  } = useQuery(openPositionsQueries.list());
+  } = useQuery(openPositionsQueries.list(authed));
   const {
     data: closedData,
     isError: closedError,
     isPending: closedPending,
-  } = useQuery(closedPositionsQueries.list());
-  const { data: status } = useQuery(statusQueries.summary());
+  } = useQuery(closedPositionsQueries.list(authed));
+  const { data: status } = useQuery(statusQueries.summary(authed));
 
   const rows = useMemo(() => {
     if (tab === "OPEN") {

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { type FeedEvent, feedQueries } from "@/lib/queries/events";
 import {
   notificationQueries,
@@ -112,9 +113,10 @@ export function formatTimeAgo(iso: string, nowMs: number): string {
 }
 
 export function useNotifications() {
-  const { data: feed } = useQuery(feedQueries.recent());
+  const authed = useTerminalAuthenticated();
+  const { data: feed } = useQuery(feedQueries.recent(authed));
   const { data: serverReads, isPending: readsPending } = useQuery(
-    notificationQueries.readState(),
+    notificationQueries.readState(authed),
   );
 
   // Signed-out fallback: local reads live in a cache entry so optimistic

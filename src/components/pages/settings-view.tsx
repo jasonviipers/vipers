@@ -65,6 +65,7 @@ const LLM_PROVIDER_LABELS: Record<string, string> = {
   ANTHROPIC: "ANTHROPIC",
   DEEPSEEK: "DEEPSEEK",
   GOOGLE: "GOOGLE",
+  OLLAMA: "OLLAMA (Cloud)",
   OPENAI: "OPENAI",
   XAI: "XAI",
 };
@@ -610,6 +611,8 @@ interface AgentLlmConfig {
   agentId: string;
   codename: string;
   providerOverride: string | null;
+  /** Per-agent model override within the provider's catalog; null = default. */
+  modelOverride: string | null;
   team: string;
 }
 
@@ -617,12 +620,18 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
   const queryClient = useQueryClient();
   const AGENT_LLM_KEY = ["settings", "agent-llm"] as const;
 
-  const { data, isError } = useQuery<{ agents: AgentLlmConfig[] }>({
+  const { data, isError } = useQuery<{
+    agents: AgentLlmConfig[];
+    providerModels: Record<string, string[]>;
+  }>({
     queryKey: AGENT_LLM_KEY,
     queryFn: async () => {
       const res = await fetch("/api/settings/agent-llm");
       if (!res.ok) throw new Error(`API ${res.status}`);
-      return (await res.json()) as { agents: AgentLlmConfig[] };
+      return (await res.json()) as {
+        agents: AgentLlmConfig[];
+        providerModels: Record<string, string[]>;
+      };
     },
     staleTime: 10_000,
   });
@@ -631,6 +640,7 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
     mutationFn: async (payload: {
       agentId: string;
       provider: string | null;
+      model?: string | null;
     }) => {
       const res = await fetch("/api/settings/agent-llm", {
         body: JSON.stringify(payload),
@@ -646,6 +656,7 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
   });
 
   const agents = data?.agents ?? [];
+  const providerModels = data?.providerModels ?? {};
   if (agents.length === 0 && !isError) {
     return null;
   }
@@ -657,6 +668,7 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
     "GOOGLE",
     "XAI",
     "DEEPSEEK",
+    "OLLAMA",
   ];
 
   return (
@@ -676,6 +688,12 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
           agent.providerOverride != null
             ? agent.providerOverride
             : `FLEET DEFAULT (${fleetProvider})`;
+        const effectiveProvider = agent.providerOverride ?? fleetProvider;
+        const modelOptions = providerModels[effectiveProvider] ?? [];
+        // Show a model picker when the effective provider has a real catalog
+        // (Ollama today); single-model providers render their default only.
+        const showModelPicker = modelOptions.length > 1;
+        const currentModelOption = agent.modelOverride ?? "PROVIDER DEFAULT";
         return (
           <div key={agent.agentId} className="flex flex-col gap-0.5">
             <span className="text-[9px] font-bold tracking-wider text-terminal-dim">
@@ -687,12 +705,37 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
               options={PROVIDER_OPTIONS}
               onChange={(v) => {
                 const isDefault = v.startsWith("FLEET DEFAULT");
+                const nextProvider = isDefault ? null : v;
+                const nextCatalog = nextProvider
+                  ? (providerModels[nextProvider] ?? [])
+                  : [];
                 updateMutation.mutate({
                   agentId: agent.agentId,
-                  provider: isDefault ? null : v,
+                  provider: nextProvider,
+                  // A provider switch drops a stale model override that isn't
+                  // in the new provider's catalog.
+                  model:
+                    agent.modelOverride &&
+                    nextCatalog.includes(agent.modelOverride)
+                      ? agent.modelOverride
+                      : null,
                 });
               }}
             />
+            {showModelPicker && (
+              <InlineSelect
+                label={`${agent.agentId} MODEL`}
+                value={currentModelOption}
+                options={["PROVIDER DEFAULT", ...modelOptions]}
+                onChange={(v) =>
+                  updateMutation.mutate({
+                    agentId: agent.agentId,
+                    provider: agent.providerOverride ?? fleetProvider,
+                    model: v === "PROVIDER DEFAULT" ? null : v,
+                  })
+                }
+              />
+            )}
           </div>
         );
       })}
@@ -1056,7 +1099,7 @@ function AgentConfigurationSection({
         label="DEFAULT LLM PROVIDER"
         description="Live: the agent fleet's model switches to this provider on the next pipeline run (key resolved from the stored keys below, then env)"
         value={runtime.defaultLlmProvider}
-        options={["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK"]}
+        options={["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK", "OLLAMA"]}
         onChange={(v) => onChange("defaultLlmProvider", v)}
       />
       {serverUnreachable && (

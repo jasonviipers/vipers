@@ -22,6 +22,12 @@ const PRICING: Record<
   GOOGLE: {
     "gemini-flash-latest": { input: 0.000000075, output: 0.0000003 },
   },
+  OLLAMA: {
+    // Ollama Cloud pricing is plan-based, not per-token; the status-bar cost
+    // guide uses the mid-tier estimate so a fleet pinned to Ollama still reads
+    // a sensible (approximate) spend.
+    "glm-5.3-flash": { input: 0.0000002, output: 0.000001 },
+  },
   OPENAI: {
     "gpt-4.1-mini": { input: 0.0000004, output: 0.0000016 },
   },

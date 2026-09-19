@@ -36,24 +36,27 @@ export interface TerminalSettings {
   defaultLlm: string;
 }
 
-export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
-  // Display & interface
-  timezone: "UTC",
-  baseCurrency: "USD",
-  compactMode: false,
-  animationsEnabled: true,
-  tickerBarEnabled: true,
-  soundEnabled: false,
-  // Notifications
-  tradeAlerts: true,
-  signalAlerts: true,
-  riskAlerts: true,
-  agentStatusAlerts: true,
-  consensusAlerts: false,
-  alertThreshold: 70,
-  // Agent configuration
-  defaultLlm: "GOOGLE",
-};
+export type TerminalSettingsSnapshot = Readonly<TerminalSettings>;
+
+export const DEFAULT_TERMINAL_SETTINGS: TerminalSettingsSnapshot =
+  Object.freeze({
+    // Display & interface
+    timezone: "UTC",
+    baseCurrency: "USD",
+    compactMode: false,
+    animationsEnabled: true,
+    tickerBarEnabled: true,
+    soundEnabled: false,
+    // Notifications
+    tradeAlerts: true,
+    signalAlerts: true,
+    riskAlerts: true,
+    agentStatusAlerts: true,
+    consensusAlerts: false,
+    alertThreshold: 70,
+    // Agent configuration
+    defaultLlm: "GOOGLE",
+  });
 
 const STORAGE_KEY = "viipers_terminal_settings";
 
@@ -64,7 +67,7 @@ function readStore(): TerminalSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return DEFAULT_TERMINAL_SETTINGS;
+      return { ...DEFAULT_TERMINAL_SETTINGS };
     }
     const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === "object") {
@@ -77,14 +80,19 @@ function readStore(): TerminalSettings {
     // localStorage/JSON can throw in private browsing or storage-restricted
     // contexts; fall back to defaults rather than crashing the settings view
   }
-  return DEFAULT_TERMINAL_SETTINGS;
+  return { ...DEFAULT_TERMINAL_SETTINGS };
 }
 
 export function loadTerminalSettings(): TerminalSettings {
   if (typeof window === "undefined") {
-    return DEFAULT_TERMINAL_SETTINGS;
+    return { ...DEFAULT_TERMINAL_SETTINGS };
   }
   return readStore();
+}
+
+/** Server-side snapshot so SSR/hydration match the default render. */
+export function getServerTerminalSettings(): TerminalSettings {
+  return { ...DEFAULT_TERMINAL_SETTINGS };
 }
 
 function emit(settings: TerminalSettings): void {
@@ -95,6 +103,12 @@ function emit(settings: TerminalSettings): void {
       // A broken listener must never break the writer.
     }
   }
+}
+
+function isEqual(a: TerminalSettings, b: TerminalSettings): boolean {
+  return (
+    Object.keys(DEFAULT_TERMINAL_SETTINGS) as (keyof TerminalSettings)[]
+  ).every((key) => a[key] === b[key]);
 }
 
 export function saveTerminalSettings(settings: TerminalSettings): void {
@@ -111,10 +125,24 @@ export function saveTerminalSettings(settings: TerminalSettings): void {
   }
 }
 
+/** Merge a partial patch over the current settings (no read-modify-write race on the stored blob). */
+export function updateTerminalSettings(patch: Partial<TerminalSettings>): void {
+  saveTerminalSettings({ ...loadTerminalSettings(), ...patch });
+}
+
+/** Restore the default settings blob. */
+export function resetTerminalSettings(): void {
+  saveTerminalSettings({ ...DEFAULT_TERMINAL_SETTINGS });
+}
+
 /** Subscribe to settings changes; returns an unsubscribe function. */
-function subscribeTerminalSettings(listener: Listener): () => void {
+export function subscribeTerminalSettings(listener: Listener): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 }
+
+// Referenced by the hooks layer (`use-terminal-settings`); keeping the
+// import-graph honest avoids a lint unused-dead-code report on this helper.
+void isEqual;

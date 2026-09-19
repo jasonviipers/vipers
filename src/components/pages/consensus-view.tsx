@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle, Clock, Shield, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { agentsDbQueries } from "@/lib/queries/agents-db";
 import {
@@ -191,8 +192,9 @@ function ProposalCard({
 // -- Main view --------------------------------------------------------------
 
 export function ConsensusView() {
-  const { data, isError, isPending } = useQuery(consensusQueries.list());
-  const { data: fleet } = useQuery(agentsDbQueries.fleet());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(consensusQueries.list(authed));
+  const { data: fleet } = useQuery(agentsDbQueries.fleet(authed));
 
   // Clock tick keeps relative timestamps/deadlines fresh between fetches.
   const [now, setNow] = useState(() => Date.now());

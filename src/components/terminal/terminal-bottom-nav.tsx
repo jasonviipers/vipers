@@ -8,6 +8,7 @@ import {
   ChevronUp,
   LayoutGrid,
   MoreHorizontal,
+  Radio,
   Settings,
   Shield,
   Target,
@@ -24,6 +25,7 @@ import {
   NotificationBadgeIcon,
   NotificationsList,
 } from "@/components/terminal/notifications-list";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 import { useNotifications } from "@/hooks/use-notifications";
 import { agentsDbQueries } from "@/lib/queries/agents-db";
@@ -34,6 +36,7 @@ const NAV_ITEMS = [
   { href: "/signals", label: "SIGNALS", icon: Zap },
   { href: "/positions", label: "POSITIONS", icon: Target },
   { href: "/strategies", label: "STRATEGIES", icon: LayoutGrid },
+  { href: "/channels", label: "CHANNELS", icon: Radio },
   { href: "/consensus", label: "CONSENSUS", icon: Shield },
   { href: "/leaderboard", label: "LEADERBOARD", icon: Trophy },
   { href: "/settings", label: "SETTINGS", icon: Settings },
@@ -49,8 +52,9 @@ export function TerminalBottomNav() {
   // <main id="main-content">; window listener covers short/unspecialized
   // pages as a fallback.
   const { hidden } = useHideOnScroll({ scrollElementId: "main-content" });
+  const authed = useTerminalAuthenticated();
   // Live fleet liveness; deduped with the agents view via the shared key.
-  const { data: fleet } = useQuery(agentsDbQueries.fleet());
+  const { data: fleet } = useQuery(agentsDbQueries.fleet(authed));
   const onlineCount = fleet?.onlineCount ?? 0;
   const totalAgents = fleet?.total ?? 0;
   const { unreadCount } = useNotifications();

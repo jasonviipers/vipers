@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { signalActivityQueries } from "@/lib/queries/signals";
 import { ChartStatsFooter } from "./chart-stats-footer";
 
@@ -36,7 +37,10 @@ function SignalCardShell({
  * no chart library.
  */
 export function SignalChart() {
-  const { data, isError, isPending } = useQuery(signalActivityQueries.hourly());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(
+    signalActivityQueries.hourly(authed),
+  );
   const buckets = data?.buckets ?? [];
 
   const hasData = buckets.some((b) => b.value > 0);

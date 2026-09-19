@@ -141,8 +141,15 @@ export const llmCredentials = pgTable("llm_credentials", {
  */
 export const agentLlmConfigs = pgTable("agent_llm_configs", {
   agentId: text("agent_id").primaryKey(),
-  /** "OPENAI" | "ANTHROPIC" | "GOOGLE" | "XAI" | "DEEPSEEK". */
+  /** "OPENAI" | "ANTHROPIC" | "GOOGLE" | "XAI" | "DEEPSEEK" | "OLLAMA". */
   provider: text("provider").notNull(),
+  /**
+   * Optional model override for the provider, e.g. "glm-5.3" on OLLAMA. Null
+   * → the provider's default model (lib/llm-model.ts PROVIDER_MODELS). Only
+   * validated against the provider's known catalog when set — unknown ids are
+   * rejected at write time, so a typo can't wedge an agent at call time.
+   */
+  model: text("model"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

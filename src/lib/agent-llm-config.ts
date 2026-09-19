@@ -23,20 +23,31 @@ export interface AgentLlmSummary {
   agentId: string;
   /** Display codename when the config defines one, else the id. */
   codename: string;
-  /** Explicit per-agent override, or null when inheriting the fleet default. */
+  /** Explicit per-agent provider override, or null when inheriting the fleet default. */
   providerOverride: LlmProviderId | null;
+  /**
+   * Optional per-agent model override within the provider's catalog
+   * (e.g. "glm-5.3" on OLLAMA), or null for the provider default.
+   */
+  modelOverride: string | null;
   /** Display team of the agent (SENTIMENT / ANALYSIS / RISK / EXECUTION / COORDINATION). */
   team: string;
 }
 
 /** All per-agent LLM overrides merged with the fleet identity catalog. */
 export async function listAgentLlmConfigs(): Promise<AgentLlmSummary[]> {
-  let overrides = new Map<string, LlmProviderId>();
+  let overrides = new Map<
+    string,
+    { model: string | null; provider: LlmProviderId }
+  >();
   try {
     const rows = await db.select().from(agentLlmConfigs);
     for (const row of rows) {
       if (isLlmProviderId(row.provider)) {
-        overrides.set(row.agentId, row.provider);
+        overrides.set(row.agentId, {
+          model: row.model ?? null,
+          provider: row.provider,
+        });
       }
     }
   } catch {
@@ -45,12 +56,16 @@ export async function listAgentLlmConfigs(): Promise<AgentLlmSummary[]> {
     overrides = new Map();
   }
 
-  return agentConfigs.map((config) => ({
-    agentId: config.id,
-    codename: config.codename ?? config.id,
-    providerOverride: overrides.get(config.id) ?? null,
-    team: config.team,
-  }));
+  return agentConfigs.map((config) => {
+    const override = overrides.get(config.id);
+    return {
+      agentId: config.id,
+      codename: config.codename ?? config.id,
+      providerOverride: override?.provider ?? null,
+      modelOverride: override?.model ?? null,
+      team: config.team,
+    };
+  });
 }
 
 /**
@@ -64,18 +79,25 @@ export function isFleetAgentId(agentId: string): boolean {
 /**
  * Upsert (or clear) the provider override for one agent. `provider: null`
  * removes any override so the agent inherits the fleet default again.
+ * `model` (optional) pins a specific model from that provider's catalog.
  * Invalidates the model-resolution cache (invalidateActiveProviderCache).
  */
 export async function setAgentLlmProvider(
   agentId: string,
   provider: LlmProviderId | null,
+  model?: string | null,
 ): Promise<void> {
   if (provider) {
     await db
       .insert(agentLlmConfigs)
-      .values({ agentId, provider, updatedAt: new Date() })
+      .values({
+        agentId,
+        model: model ?? null,
+        provider,
+        updatedAt: new Date(),
+      })
       .onConflictDoUpdate({
-        set: { provider, updatedAt: new Date() },
+        set: { model: model ?? null, provider, updatedAt: new Date() },
         target: agentLlmConfigs.agentId,
       });
   } else {

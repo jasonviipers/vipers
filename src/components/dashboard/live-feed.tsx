@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Tooltip,
@@ -51,7 +52,8 @@ function formatTimeAgo(date: Date, nowMs: number) {
 const MAX_FEED_ROWS = 40;
 
 export function LiveFeed() {
-  const { data, isError, isPending } = useQuery(feedQueries.recent());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(feedQueries.recent(authed));
 
   // Poll the clock so relative "time ago" labels stay fresh between fetches.
   const [now, setNow] = useState(() => Date.now());

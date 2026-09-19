@@ -8,6 +8,7 @@ import { unlockAudio } from "@/lib/sound";
 import { loadTerminalSettings } from "@/lib/terminal-settings";
 import { AuthModal } from "./auth-modal";
 import { StatusBar } from "./status-bar";
+import { TerminalAuthProvider } from "./terminal-auth-context";
 import { TerminalBottomNav } from "./terminal-bottom-nav";
 import { TerminalHeader } from "./terminal-header";
 import { TickerBar } from "./ticker-bar";
@@ -105,25 +106,46 @@ export function TerminalLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div
-      onPointerDown={unlockAudio}
-      data-animations={animations ? "on" : "off"}
-      className={`relative isolate flex h-dvh flex-col overflow-hidden bg-background ${
-        compact ? "[&_span]:!text-[11px]!" : ""
-      }`}
-    >
-      {tickerEnabled && <TickerBar />}
-      {authenticated && <WebMCPTools />}
-      <TerminalHeader onSignOut={handleSignOut} />
-      <main
-        id="main-content"
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+    <TerminalAuthProvider authenticated={authenticated}>
+      <div
+        onPointerDown={unlockAudio}
+        data-animations={animations ? "on" : "off"}
+        className={`relative isolate flex h-dvh flex-col overflow-hidden bg-background ${
+          compact ? "[&_span]:!text-[11px]!" : ""
+        }`}
       >
-        {children}
-      </main>
-      <TerminalBottomNav />
-      <StatusBar />
-      {!authenticated && <AuthModal onAuthenticate={handleAuthenticate} />}
-    </div>
+        {/* The whole shell — chrome AND content — sits behind the lock gate.
+            When locked it is inert + aria-hidden so nothing underneath is
+            focusable/clickable, and the overlay below obscures it. */}
+        <div
+          {...(authenticated ? {} : { inert: true, "aria-hidden": true })}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          {tickerEnabled && <TickerBar />}
+          {authenticated && <WebMCPTools />}
+          <TerminalHeader onSignOut={handleSignOut} />
+          <main
+            id="main-content"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
+            {children}
+          </main>
+          <TerminalBottomNav />
+          <StatusBar />
+        </div>
+        {!authenticated && (
+          <>
+            {/* Full-viewport gate: blur AND a solid dark tint over the whole
+                shell — opacity alone isn't enough, so pair backdrop-filter
+                with a real dim layer. Sits under the top-layer <dialog> modal. */}
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 z-40 bg-black/70 backdrop-blur-xl"
+            />
+            <AuthModal onAuthenticate={handleAuthenticate} />
+          </>
+        )}
+      </div>
+    </TerminalAuthProvider>
   );
 }

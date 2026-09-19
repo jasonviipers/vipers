@@ -101,7 +101,10 @@ export const DELETE = withEvlog(async (request: Request) => {
   const provider = url.searchParams.get("provider");
   if (!provider || !isLlmProviderId(provider)) {
     return Response.json(
-      { error: "expected ?provider=<OPENAI|ANTHROPIC|GOOGLE|XAI|DEEPSEEK>" },
+      {
+        error:
+          "expected ?provider=<OPENAI|ANTHROPIC|GOOGLE|XAI|DEEPSEEK|OLLAMA>",
+      },
       { status: 400 },
     );
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import {
   Tooltip,
   TooltipContent,
@@ -10,7 +11,10 @@ import { fmtDollar, fmtPnl } from "@/lib/format";
 import { openPositionsQueries } from "@/lib/queries/positions";
 
 export function PositionsTable() {
-  const { data, isError, isPending } = useQuery(openPositionsQueries.list());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(
+    openPositionsQueries.list(authed),
+  );
 
   const openPositions = data?.items ?? [];
 

@@ -18,6 +18,11 @@ export const env = createEnv({
     ANTHROPIC_API_KEY: z.string().optional(),
     XAI_API_KEY: z.string().optional(),
     DEEPSEEK_API_KEY: z.string().optional(),
+    // Optional: Ollama Cloud key (https://ollama.com/settings/keys). Powers
+    // the OLLAMA provider in the fleet's per-agent model picker; when absent,
+    // OLLAMA falls back to the next configured provider like any other
+    // provider without a resolvable key.
+    OLLAMA_API_KEY: z.string().optional(),
     // Encrypts broker/LLM credentials stored in the DB (written via the
     // /settings UI). A present-but-invalid key (not base64 of exactly 32
     // bytes) fails the boot here — the old behavior was a raw 500 on the
@@ -55,6 +60,14 @@ export const env = createEnv({
     // public endpoints and honestly reports blocked status instead.
     REDDIT_CLIENT_ID: z.string().optional(),
     REDDIT_CLIENT_SECRET: z.string().optional(),
+    // Optional Composio Platform project key (dashboard.composio.dev →
+    // Platform). Powers the /channels integration page and the Composio-
+    // backed Reddit fetch (src/lib/composio.ts): the operator connects
+    // Reddit/Discord/etc. once, and the fleet runs tools through that
+    // connection under the stable "operator" user id. When absent, channel
+    // status reports unconfigured and the Reddit tool degrades to the RSS
+    // source instead of inventing posts.
+    COMPOSIO_API_KEY: z.string().optional(),
     // Optional Redis connection (Upstash rediss:// or any Redis URL). When
     // absent, caches fall back to in-process memory. Parsed by src/lib/redis.ts.
     REDIS_URL: z.string().optional(),
@@ -89,6 +102,8 @@ export const env = createEnv({
     REDDIT_CLIENT_ID: process.env.REDDIT_CLIENT_ID,
     REDDIT_CLIENT_SECRET: process.env.REDDIT_CLIENT_SECRET,
     REDIS_URL: process.env.REDIS_URL,
+    COMPOSIO_API_KEY: process.env.COMPOSIO_API_KEY,
     PAPER_BOOK_NOTIONAL_USD: process.env.PAPER_BOOK_NOTIONAL_USD,
+    OLLAMA_API_KEY: process.env.OLLAMA_API_KEY,
   },
 });

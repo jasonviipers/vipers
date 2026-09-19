@@ -109,7 +109,7 @@ export const agentIdentities: ReadonlyMap<string, Identity> = new Map(
 );
 
 /** The subject an identity resolves to (used for logging, read-state). */
-function identitySubject(identity: Identity): string {
+function _identitySubject(identity: Identity): string {
   return identity.subject;
 }
 
@@ -188,6 +188,6 @@ function parseAgentApiKeys(): Record<string, string> {
 }
 
 /** Convenience for callers that only need a single permission check. */
-function identityCan(identity: Identity, permission: Permission): boolean {
+function _identityCan(identity: Identity, permission: Permission): boolean {
   return can(identity.permissions, permission);
 }

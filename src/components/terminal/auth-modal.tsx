@@ -147,7 +147,7 @@ export function AuthModal({
       // under the address bar.
       className="fixed inset-0 z-50 m-auto flex w-full items-center justify-center overflow-y-auto border-0 bg-transparent p-0"
     >
-      <div className="absolute inset-0 bg-background/80 backdrop-blur-md" />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-xl" />
       <div className="relative z-10 flex min-h-full w-full items-center justify-center p-4">
         <div className="w-full max-w-md border border-border bg-card p-6 shadow-2xl sm:p-8">
           <div className="flex flex-col items-center gap-2 text-center">

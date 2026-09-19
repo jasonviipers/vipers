@@ -104,7 +104,7 @@ export const runtimeSettingsSchema = z.object({
   consensusQuorum: z.number().int().min(30).max(100).optional(),
   debugMode: z.boolean().optional(),
   defaultLlmProvider: z
-    .enum(["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK"])
+    .enum(["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK", "OLLAMA"])
     .optional(),
   heartbeatInterval: z.number().int().min(5).max(120).optional(),
   maxDailyLossPct: z.number().int().min(1).max(20).optional(),

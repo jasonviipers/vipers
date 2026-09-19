@@ -66,8 +66,9 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
 }
 
 export const agentsDbQueries = {
-  fleet: () =>
+  fleet: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: agentsDbKeys.fleet(),
       queryFn: () => fetchJson<AgentsFleetResponse>("/api/agents/db"),
       // Heartbeats/metrics move on every pipeline run; poll keeps the

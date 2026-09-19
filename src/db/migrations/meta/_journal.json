@@ -112,6 +112,20 @@
       "when": 1789731292555,
       "tag": "0015_illegal_logan",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789820307456,
+      "tag": "0016_lonely_tusk",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789821773540,
+      "tag": "0017_curvy_grandmaster",
+      "breakpoints": true
     }
   ]
 }

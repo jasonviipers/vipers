@@ -1,0 +1,1 @@
+ALTER TABLE "agent_llm_configs" ADD COLUMN "model" text;

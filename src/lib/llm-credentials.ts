@@ -24,6 +24,7 @@ export const LLM_PROVIDER_IDS = [
   "GOOGLE",
   "XAI",
   "DEEPSEEK",
+  "OLLAMA",
 ] as const;
 
 export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number];
@@ -33,12 +34,61 @@ const PROVIDER_ENV_KEYS: Record<LlmProviderId, string> = {
   ANTHROPIC: "ANTHROPIC_API_KEY",
   DEEPSEEK: "DEEPSEEK_API_KEY",
   GOOGLE: "GOOGLE_GENERATIVE_AI_API_KEY",
+  OLLAMA: "OLLAMA_API_KEY",
   OPENAI: "OPENAI_API_KEY",
   XAI: "XAI_API_KEY",
 };
 
 export function isLlmProviderId(value: string): value is LlmProviderId {
   return (LLM_PROVIDER_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * Per-provider model catalog for the /settings pickers. Only Ollama has a
+ * real multi-model surface today (Ollama Cloud serves the list below —
+ * verified against https://ollama.com/api/tags); the other providers run a
+ * single curated default, so their catalogs are that one-tier entry. The UI
+ * lists the catalog for whichever provider is selected; the API rejects any
+ * model id not in the selected provider's catalog, so a typo can't wedge an
+ * agent at call time.
+ */
+export const PROVIDER_MODEL_CATALOG: Record<LlmProviderId, readonly string[]> =
+  {
+    ANTHROPIC: ["claude-haiku-4-5"],
+    DEEPSEEK: ["deepseek-chat"],
+    GOOGLE: ["gemini-flash-latest"],
+    OLLAMA: [
+      // Fast/cheap workhorses
+      "glm-5.3-flash",
+      "deepseek-v4-flash:0731",
+      "deepseek-v4.1-flash",
+      "gemma4:31b",
+      "gpt-oss:20b",
+      // Flagship reasoning / agentic
+      "glm-5.3",
+      "kimi-k3",
+      "qwen3.5:397b",
+      "minimax-m3",
+      "nemotron-3-ultra",
+      "gpt-oss:120b",
+    ],
+    OPENAI: ["gpt-4.1-mini"],
+    XAI: ["grok-4-fast"],
+  };
+
+/**
+ * True when `model` is in the provider's known catalog. An empty/undefined
+ * model is valid (inherit the provider default) — only a non-empty unknown id
+ * is rejected.
+ */
+export function isLlmModelForProvider(
+  provider: LlmProviderId,
+  model: string | null | undefined,
+): boolean {
+  if (!model) {
+    return true;
+  }
+  return PROVIDER_MODEL_CATALOG[provider].includes(model);
 }
 
 export interface LlmKeyStatus {

@@ -12,6 +12,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { type AgentFleetEntry, agentsDbQueries } from "@/lib/queries/agents-db";
 
@@ -245,8 +246,9 @@ function TeamSummary({ team, agents }: { team: string; agents: Agent[] }) {
 export function AgentsView() {
   const [selectedTeam, setSelectedTeam] = useState<string>("ALL");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const authed = useTerminalAuthenticated();
 
-  const fleetQuery = useQuery(agentsDbQueries.fleet());
+  const fleetQuery = useQuery(agentsDbQueries.fleet(authed));
   const allAgents: Agent[] = fleetQuery.data?.items ?? [];
   const teams = [...new Set(allAgents.map((a) => a.team))];
   const filteredAgents =

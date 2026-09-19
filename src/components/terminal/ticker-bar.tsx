@@ -2,11 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { TrendingDown, TrendingUp } from "lucide-react";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { fmtPrice } from "@/lib/format";
 import { quotesQueries, type TickerItem } from "@/lib/queries/quotes";
 
 export function TickerBar() {
-  const { data, isError, isPending } = useQuery(quotesQueries.live());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(quotesQueries.live(authed));
   const items = data?.items ?? [];
 
   const row = (ariaHidden: boolean) => (

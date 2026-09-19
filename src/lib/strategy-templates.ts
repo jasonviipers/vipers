@@ -78,6 +78,6 @@ export const STRATEGY_TEMPLATES: StrategyTemplate[] = [
 ];
 
 /** Lookup helper for tests / future server-side seeding. */
-function getStrategyTemplate(id: string): StrategyTemplate | undefined {
+function _getStrategyTemplate(id: string): StrategyTemplate | undefined {
   return STRATEGY_TEMPLATES.find((t) => t.id === id);
 }

@@ -59,8 +59,9 @@ async function fetchJson<T>(input: string): Promise<T> {
 
 export const openPositionsQueries = {
   /** 30s poll: pnl/currentPrice are cached by the server-side price-tick job. */
-  list: () =>
+  list: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: openPositionsKeys.list(),
       queryFn: () => fetchJson<OpenPositionsResponse>("/api/positions/open"),
       refetchInterval: 30_000,
@@ -70,8 +71,9 @@ export const openPositionsQueries = {
 
 export const closedPositionsQueries = {
   /** History is immutable per row; a 60s poll only catches brand-new closes. */
-  list: () =>
+  list: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: closedPositionsKeys.list(),
       queryFn: () =>
         fetchJson<ClosedPositionsResponse>("/api/positions/closed"),

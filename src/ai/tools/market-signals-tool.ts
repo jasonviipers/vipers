@@ -7,6 +7,11 @@ import {
   storeScrapedMessages,
 } from "@/ai/scrape-store";
 import { env } from "@/env";
+import {
+  type ComposioRedditPost,
+  fetchRedditPostsViaComposio,
+  isRedditViaComposioActive,
+} from "@/lib/composio";
 import { log } from "@/lib/evlog";
 
 /**
@@ -211,6 +216,18 @@ interface RedditPost {
   title: string;
 }
 
+/** Map the Composio post shape onto the local RedditPost shape. */
+function toRedditPost(post: ComposioRedditPost): RedditPost {
+  return {
+    num_comments: post.numComments,
+    permalink: post.permalink ?? undefined,
+    score: post.score,
+    selftext: post.selftext,
+    subreddit: post.subreddit ?? undefined,
+    title: post.title,
+  };
+}
+
 async function fetchRedditPosts(
   asset: string,
   limitPerSub = 20,
@@ -218,6 +235,48 @@ async function fetchRedditPosts(
   const terms = assetTerms(asset);
   const query = terms[0] ?? baseSymbol(asset).toLowerCase();
   const out: RedditPost[] = [];
+
+  // Preferred path: the operator's Composio Reddit connection (connected on
+  // /channels). One REDDIT_SEARCH_ACROSS_SUBREDDITS call covers the whole
+  // subreddit set via `subreddit:` operators, with Composio-managed OAuth —
+  // immune to the public .json network blocks. Unconfigured/unconnected →
+  // fall through to the direct fetch below. Never fabricates posts.
+  if (await isRedditViaComposioActive()) {
+    try {
+      const composioPosts = await fetchRedditPostsViaComposio({
+        query,
+        subreddits: SUBREDDITS,
+        limitPerSub,
+      });
+      if (composioPosts.length > 0) {
+        log.info({
+          job: "market-signals",
+          message: "reddit posts fetched via composio",
+          redditVia: "composio",
+        });
+        return composioPosts
+          .map(toRedditPost)
+          .filter((p) =>
+            mentionsAsset(`${p.title} ${p.selftext ?? ""}`, terms),
+          );
+      }
+      log.warn({
+        job: "market-signals",
+        source: "reddit",
+        warning:
+          "composio reddit connected but returned no posts — falling back to direct fetch",
+      });
+    } catch (error) {
+      log.warn({
+        job: "market-signals",
+        source: "reddit",
+        warning: `composio reddit fetch failed, falling back to direct fetch: ${
+          error instanceof Error ? error.message : "unknown"
+        }`,
+      });
+    }
+  }
+
   let blocked = 0;
   const useOAuth = isRedditOAuthConfigured();
 

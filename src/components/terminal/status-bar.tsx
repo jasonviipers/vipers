@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { FlashValue } from "@/components/flash-value";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { useTerminalClock } from "@/hooks/use-terminal-clock";
 import { APP_NAME, APP_VERSION } from "@/lib/constant";
 import { activeTimezone } from "@/lib/date-utils";
@@ -15,7 +16,8 @@ import { statusQueries } from "@/lib/queries/status";
  * is unreachable.
  */
 export function StatusBar() {
-  const { data, isError } = useQuery(statusQueries.summary());
+  const authed = useTerminalAuthenticated();
+  const { data, isError } = useQuery(statusQueries.summary(authed));
   const { time: utcTime, date } = useTerminalClock({ intervalMs: 1000 });
   const tz = activeTimezone();
 

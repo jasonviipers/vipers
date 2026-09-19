@@ -3,12 +3,17 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
+import { createOllama } from "ai-sdk-ollama";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { agentLlmConfigs } from "@/db/schema/trading";
 import { log } from "@/lib/evlog";
-import { getLlmApiKey, type LlmProviderId } from "@/lib/llm-credentials";
+import {
+  getLlmApiKey,
+  type LlmProviderId,
+  PROVIDER_MODEL_CATALOG,
+} from "@/lib/llm-credentials";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 /**
@@ -25,7 +30,12 @@ import { getRuntimeSettings } from "@/lib/runtime-settings";
  * a misconfigured switch degrades instead of breaking the pipeline.
  */
 
-/** Default model per provider (small/fast tiers — pipeline latency matters). */
+/**
+ * Default model per provider when no per-agent override is set (small/fast
+ * tiers — pipeline latency matters). The full per-provider catalog lives in
+ * lib/llm-credentials.ts (PROVIDER_MODEL_CATALOG); each entry here is the
+ * first/default of that provider's catalog.
+ */
 const PROVIDER_MODELS: Record<LlmProviderId, string> = {
   ANTHROPIC: "claude-haiku-4-5",
   DEEPSEEK: "deepseek-chat",
@@ -34,9 +44,13 @@ const PROVIDER_MODELS: Record<LlmProviderId, string> = {
   // not exist for this key). "gemini-flash-latest" is Google's maintained
   // alias that always resolves to the current fast tier.
   GOOGLE: "gemini-flash-latest",
+  OLLAMA: "glm-5.3-flash",
   OPENAI: "gpt-4.1-mini",
   XAI: "grok-4-fast",
 };
+
+/** Ollama Cloud host; the apiKey goes in the Authorization: Bearer header. */
+const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/api";
 
 const FALLBACK_PROVIDER: LlmProviderId = "GOOGLE";
 
@@ -67,7 +81,8 @@ function isValidProvider(value: string): value is LlmProviderId {
     value === "ANTHROPIC" ||
     value === "GOOGLE" ||
     value === "XAI" ||
-    value === "DEEPSEEK"
+    value === "DEEPSEEK" ||
+    value === "OLLAMA"
   );
 }
 
@@ -79,32 +94,39 @@ export function invalidateActiveProviderCache(): void {
 
 const agentProviderCache = new Map<
   string,
-  { value: LlmProviderId | null; expiresAt: number }
+  {
+    value: { model: string | null; provider: LlmProviderId } | null;
+    expiresAt: number;
+  }
 >();
 
 /**
- * Resolve the provider for a specific fleet agent. A per-agent override
- * (agent_llm_configs row, set in /settings) wins; otherwise the agent
- * inherits the operator's DEFAULT LLM PROVIDER. Null rows never override —
- * the fleet default still applies. A missing or corrupt DB falls back to
- * the fleet default, so a config read failure never breaks an agent call.
+ * Resolve the provider + optional model for a specific fleet agent. A
+ * per-agent override (agent_llm_configs row, set in /settings) wins;
+ * otherwise the agent inherits the operator's DEFAULT LLM PROVIDER. Null
+ * rows never override — the fleet default still applies. A missing or
+ * corrupt DB falls back to the fleet default, so a config read failure
+ * never breaks an agent call.
  */
 async function getProviderForAgent(
   agentId: string,
-): Promise<LlmProviderId | null> {
+): Promise<{ model: string | null; provider: LlmProviderId } | null> {
   const cached = agentProviderCache.get(agentId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
   }
-  let value: LlmProviderId | null = null;
+  let value: { model: string | null; provider: LlmProviderId } | null = null;
   try {
     const [row] = await db
-      .select({ provider: agentLlmConfigs.provider })
+      .select({
+        model: agentLlmConfigs.model,
+        provider: agentLlmConfigs.provider,
+      })
       .from(agentLlmConfigs)
       .where(eq(agentLlmConfigs.agentId, agentId))
       .limit(1);
     if (row && isValidProvider(row.provider)) {
-      value = row.provider;
+      value = { model: row.model ?? null, provider: row.provider };
     }
   } catch {
     // DB unreachable — fall through to the fleet default.
@@ -118,28 +140,48 @@ async function getProviderForAgent(
 
 /**
  * Build a language-model instance for a specific provider using its
- * resolved key; null when no key is available for that provider.
+ * resolved key; null when no key is available for that provider. An
+ * optional `modelOverride` pins a specific model from the provider's
+ * catalog (PROVIDER_MODEL_CATALOG) instead of the default — unknown ids are
+ * dropped to the default (defense in depth: the API already rejects them at
+ * write time, so by here an unknown id means an out-of-band write).
  */
-async function buildModelForProvider(provider: LlmProviderId) {
+async function buildModelForProvider(
+  provider: LlmProviderId,
+  modelOverride?: string,
+) {
   const apiKey = await getLlmApiKey(provider);
   if (!apiKey) {
     return null;
   }
-  return createLanguageModel(provider, apiKey);
+  return createLanguageModel(provider, apiKey, modelOverride);
 }
 
-function createLanguageModel(provider: LlmProviderId, apiKey: string) {
+function createLanguageModel(
+  provider: LlmProviderId,
+  apiKey: string,
+  modelOverride?: string,
+) {
+  const model =
+    modelOverride && PROVIDER_MODEL_CATALOG[provider].includes(modelOverride)
+      ? modelOverride
+      : PROVIDER_MODELS[provider];
   switch (provider) {
     case "ANTHROPIC":
-      return createAnthropic({ apiKey })(PROVIDER_MODELS.ANTHROPIC);
+      return createAnthropic({ apiKey })(model);
     case "DEEPSEEK":
-      return createDeepSeek({ apiKey })(PROVIDER_MODELS.DEEPSEEK);
+      return createDeepSeek({ apiKey })(model);
     case "GOOGLE":
-      return createGoogleGenerativeAI({ apiKey })(PROVIDER_MODELS.GOOGLE);
+      return createGoogleGenerativeAI({ apiKey })(model);
+    case "OLLAMA":
+      return createOllama({
+        apiKey,
+        baseURL: OLLAMA_CLOUD_BASE_URL,
+      })(model);
     case "OPENAI":
-      return createOpenAI({ apiKey })(PROVIDER_MODELS.OPENAI);
+      return createOpenAI({ apiKey })(model);
     case "XAI":
-      return createXai({ apiKey })(PROVIDER_MODELS.XAI);
+      return createXai({ apiKey })(model);
   }
 }
 
@@ -171,11 +213,13 @@ export interface ActiveModelInfo {
 export async function resolveActiveModelInfo(
   agentId?: string,
 ): Promise<ActiveModelInfo> {
-  const active = agentId
-    ? ((await getProviderForAgent(agentId)) ?? (await getActiveProvider()))
-    : await getActiveProvider();
+  const override = agentId ? await getProviderForAgent(agentId) : null;
+  const active = override?.provider ?? (await getActiveProvider());
 
-  const preferred = await buildModelForProvider(active);
+  const preferred = await buildModelForProvider(
+    active,
+    override?.model ?? undefined,
+  );
   if (preferred) {
     return { model: preferred, provider: active, usedFallback: false };
   }

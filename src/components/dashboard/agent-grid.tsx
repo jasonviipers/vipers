@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Tooltip,
@@ -108,7 +109,8 @@ export function AgentGrid() {
   const { definition } = useColorScheme();
   const sparkGreen = definition.colors.green;
   const sparkRed = definition.colors.red;
-  const { data, isError, isPending } = useQuery(agentsDbQueries.fleet());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(agentsDbQueries.fleet(authed));
   const [sortKey, setSortKey] = useState<SortKey>("pnl");
   const [sortDesc, setSortDesc] = useState(true);
 

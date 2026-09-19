@@ -25,6 +25,7 @@ export const llmProviderEnum = pgEnum("llm_provider", [
   "GOOGLE",
   "XAI",
   "DEEPSEEK",
+  "OLLAMA",
 ]);
 
 export const strategyPluginStageEnum = pgEnum("strategy_plugin_stage", [

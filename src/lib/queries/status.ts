@@ -45,8 +45,9 @@ async function fetchJson<T>(input: string): Promise<T> {
 
 export const statusQueries = {
   /** Footer summary; 30s matches the queries' default staleTime rhythm. */
-  summary: () =>
+  summary: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: statusKeys.summary(),
       queryFn: () => fetchJson<StatusResponse>("/api/status"),
       refetchInterval: 30_000,

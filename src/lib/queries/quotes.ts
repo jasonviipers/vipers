@@ -28,8 +28,9 @@ async function fetchJson<T>(input: string): Promise<T> {
 
 export const quotesQueries = {
   /** Live ticker data for the TickerBar; polls every 30s to match the server cache TTL. */
-  live: () =>
+  live: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: quotesKeys.live(),
       queryFn: () => fetchJson<QuotesResponse>("/api/quotes"),
       refetchInterval: 30_000,

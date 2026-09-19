@@ -40,8 +40,9 @@ export const consensusQueries = {
    * 15s poll: proposals move through voting quickly, and the runtime
    * event fallback below only covers the current process lifetime.
    */
-  list: () =>
+  list: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: consensusKeys.list(),
       queryFn: () =>
         fetchJson<ConsensusProposalsResponse>("/api/consensus/proposals"),

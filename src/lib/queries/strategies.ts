@@ -12,6 +12,7 @@ export const LLM_PROVIDERS = [
   "GOOGLE",
   "XAI",
   "DEEPSEEK",
+  "OLLAMA",
 ] as const;
 export const SIGNAL_SOURCES = ["reddit", "twitter", "rss"] as const;
 
@@ -73,8 +74,9 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
 }
 
 export const strategyQueries = {
-  list: () =>
+  list: (enabled = true) =>
     queryOptions({
+      enabled,
       queryKey: strategyKeys.lists(),
       queryFn: () => fetchJson<StrategiesResponse>("/api/strategies"),
       // Strategies change rarely; poll keeps multi-tab sessions honest.

@@ -6,7 +6,11 @@ import {
   setAgentLlmProvider,
 } from "@/lib/agent-llm-config";
 import { getLogger, withEvlog } from "@/lib/evlog";
-import { LLM_PROVIDER_IDS } from "@/lib/llm-credentials";
+import {
+  isLlmModelForProvider,
+  LLM_PROVIDER_IDS,
+  PROVIDER_MODEL_CATALOG,
+} from "@/lib/llm-credentials";
 import { requireWriteAccess } from "@/lib/route-auth";
 
 export const dynamic = "force-dynamic";
@@ -23,13 +27,18 @@ export const GET = withEvlog(async () => {
 
   const agents = await listAgentLlmConfigs();
   logger.set({ agentCount: agents.length });
-  return Response.json({ agents });
+  return Response.json({ agents, providerModels: PROVIDER_MODEL_CATALOG });
 });
 
 const agentLlmSchema = z.object({
   agentId: z.string().min(1),
   /** A provider id or null to clear the override (inherit fleet default). */
   provider: z.enum(LLM_PROVIDER_IDS).nullable(),
+  /**
+   * Optional model from the provider's catalog; null/omitted → provider
+   * default. Validated against PROVIDER_MODEL_CATALOG at write time.
+   */
+  model: z.string().min(1).nullable().optional(),
 });
 
 /**
@@ -61,7 +70,7 @@ export const PUT = withEvlog(async (request: Request) => {
     );
   }
 
-  const { agentId, provider } = parsed.data;
+  const { agentId, provider, model } = parsed.data;
   if (!isFleetAgentId(agentId)) {
     return Response.json(
       { error: `unknown fleet agent: ${agentId}` },
@@ -69,13 +78,23 @@ export const PUT = withEvlog(async (request: Request) => {
     );
   }
 
-  await setAgentLlmProvider(agentId, provider);
+  if (provider && model != null && !isLlmModelForProvider(provider, model)) {
+    return Response.json(
+      {
+        error: `unknown model "${model}" for provider ${provider}; expected one of: ${PROVIDER_MODEL_CATALOG[provider].join(", ")}`,
+      },
+      { status: 400 },
+    );
+  }
+
+  await setAgentLlmProvider(agentId, provider, model ?? null);
   logger.set({
     agentId,
     audit: provider
       ? "agent_llm_provider_override"
       : "agent_llm_provider_clear",
+    model: model ?? "provider-default",
     provider: provider ?? "inherit-fleet",
   });
-  return Response.json({ agentId, provider });
+  return Response.json({ agentId, model: model ?? null, provider });
 });

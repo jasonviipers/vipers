@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   useCreateStrategy,
@@ -1061,7 +1062,8 @@ function StrategiesModals({
 // -- Main view --------------------------------------------------------------
 
 export function StrategiesView() {
-  const { data, isError, isPending } = useQuery(strategyQueries.list());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(strategyQueries.list(authed));
 
   const createMutation = useCreateStrategy();
   const updateMutation = useUpdateStrategy();

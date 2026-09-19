@@ -10,6 +10,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { FlashValue } from "@/components/flash-value";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { fmtDollar } from "@/lib/format";
 import { statusQueries } from "@/lib/queries/status";
 
@@ -79,10 +80,11 @@ function pct(n: number): string {
 }
 
 export function PortfolioSummary() {
-  const { data, isError, isPending } = useQuery(statusQueries.summary());
+  const authed = useTerminalAuthenticated();
+  const { data, isError, isPending } = useQuery(statusQueries.summary(authed));
   const p = data?.portfolio;
 
-  if (isPending) {
+  if (isPending || !authed) {
     return (
       <section
         aria-label="Portfolio summary metrics"

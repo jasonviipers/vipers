@@ -1,9 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { SignalChart } from "@/components/dashboard/signal-chart";
+import { useTerminalAuthenticated } from "@/components/terminal/terminal-auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { channelsQueries } from "@/lib/queries/channels";
 import {
   type RecentSignal,
   type SignalActivityResponse,
@@ -174,11 +177,14 @@ function SignalsToolbar({
   shownCount,
   source,
   threshold,
+  redditChannel,
 }: {
   isPending: boolean;
   isError: boolean;
   totalCount: number;
   shownCount: number;
+  /** Composio Reddit channel status; undefined while loading. */
+  redditChannel: { connected: boolean; logo: string | null } | undefined;
   source: "db" | "events" | undefined;
   threshold: number;
 }) {
@@ -205,10 +211,25 @@ function SignalsToolbar({
           {source === "events" ? "RUNTIME EVENTS (NO DB HISTORY)" : ""}
         </span>
       </div>
-      <span className="text-[10px] text-muted-foreground">
-        ALERT THRESHOLD{" "}
-        <span className="font-bold text-terminal-amber">{threshold}</span>
-      </span>
+      <div className="flex items-center gap-3">
+        {/* Reddit unconnected hint: the sentiment feed loses its reddit source
+            when the operator's Composio connection is missing. Hidden while
+            the channel status is still loading (undefined) so a slow
+            /api/channels never flashes a false warning. */}
+        {redditChannel && !redditChannel.connected && (
+          <Link
+            href="/channels"
+            className="border border-terminal-amber/40 bg-terminal-amber/10 px-2 py-0.5 text-[10px] font-bold tracking-wider text-terminal-amber transition-colors hover:bg-terminal-amber/20"
+            title="Reddit posts are unavailable — the sentiment feed is running on news/RSS only. Click to connect."
+          >
+            REDDIT UNCONNECTED — CONNECT
+          </Link>
+        )}
+        <span className="text-[10px] text-muted-foreground">
+          ALERT THRESHOLD{" "}
+          <span className="font-bold text-terminal-amber">{threshold}</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -437,12 +458,17 @@ function SignalsList({
 }
 
 export function SignalsView() {
+  const authed = useTerminalAuthenticated();
   const {
     data: recent,
     isError,
     isPending,
-  } = useQuery(signalActivityQueries.recent());
-  const { data: activity } = useQuery(signalActivityQueries.hourly());
+  } = useQuery(signalActivityQueries.recent(authed));
+  const { data: activity } = useQuery(signalActivityQueries.hourly(authed));
+  // Channel status powers the REDDIT UNCONNECTED hint in the toolbar. Cheap
+  // (60s server cache) and shared with /channels; disabled for the demo
+  // session only if the terminal gate demands it — the endpoint is read-only.
+  const { data: channelsData } = useQuery(channelsQueries.status(authed));
 
   // Threshold comes from terminal settings (localStorage); lazy-init keeps it
   // SSR-safe without a post-hydration setState, so no value flickers.
@@ -513,6 +539,14 @@ export function SignalsView() {
         isError={isError}
         totalCount={signals.length}
         shownCount={filteredSignals.length}
+        redditChannel={(() => {
+          const channels = channelsData?.channels;
+          if (!channels) return undefined;
+          const reddit = channels.find((c) => c.slug === "reddit");
+          return reddit
+            ? { connected: reddit.connected, logo: reddit.logo }
+            : { connected: false, logo: null };
+        })()}
         source={recent?.source}
         threshold={threshold}
       />
