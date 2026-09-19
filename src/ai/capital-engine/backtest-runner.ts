@@ -105,6 +105,30 @@ export interface BacktestRun {
 
 const MIN_INTERVAL_MS = 60_000;
 
+/**
+ * One candidate in the predeclared reference grid: SMA(fast/slow) momentum
+ * with the reference sentiment gate.
+ */
+export interface SmaGridParams {
+  fast: number;
+  slow: number;
+}
+
+/**
+ * PREDECLARED candidate grid for the reference strategy. The walk-forward
+ * evaluation searches ONLY within this list: the grid is fixed at
+ * publication, and widening it after seeing results would be data snooping
+ * on the same window the winner is scored on. A different grid is a NEW
+ * evaluation with a NEW holdout, never a re-interpretation of this one.
+ */
+export const REFERENCE_SMA_GRID: readonly SmaGridParams[] = [
+  { fast: 2, slow: 8 },
+  { fast: 3, slow: 12 },
+  { fast: 4, slow: 16 },
+  { fast: 6, slow: 24 },
+  { fast: 8, slow: 32 },
+];
+
 function assertConfig(config: BacktestConfig): void {
   if (!(config.capital > 0) || !Number.isFinite(config.capital)) {
     throw new Error("backtest capital must be a positive finite number");
