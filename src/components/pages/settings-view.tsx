@@ -47,7 +47,7 @@ const RUNTIME_FALLBACK: RuntimeSettings = {
   automationIntervalSec: 300,
   consensusQuorum: 50,
   debugMode: false,
-  defaultLlmProvider: "GOOGLE",
+  defaultLlmProvider: "OLLAMA",
   heartbeatInterval: 30,
   maxDailyLossPct: 3,
   maxOpenPositions: 10,
@@ -616,12 +616,20 @@ interface AgentLlmConfig {
   team: string;
 }
 
+interface AgentModelPreset {
+  agentId: string;
+  model: string;
+  rationale: string;
+  provider: string;
+}
+
 function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
   const queryClient = useQueryClient();
   const AGENT_LLM_KEY = ["settings", "agent-llm"] as const;
 
   const { data, isError } = useQuery<{
     agents: AgentLlmConfig[];
+    presets: AgentModelPreset[];
     providerModels: Record<string, string[]>;
   }>({
     queryKey: AGENT_LLM_KEY,
@@ -630,6 +638,7 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
       if (!res.ok) throw new Error(`API ${res.status}`);
       return (await res.json()) as {
         agents: AgentLlmConfig[];
+        presets: AgentModelPreset[];
         providerModels: Record<string, string[]>;
       };
     },
@@ -657,26 +666,20 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
 
   const agents = data?.agents ?? [];
   const providerModels = data?.providerModels ?? {};
+  const presets = new Map(
+    (data?.presets ?? []).map((preset) => [preset.agentId, preset]),
+  );
   if (agents.length === 0 && !isError) {
     return null;
   }
 
-  const PROVIDER_OPTIONS = [
-    `FLEET DEFAULT (${fleetProvider})`,
-    "OPENAI",
-    "ANTHROPIC",
-    "GOOGLE",
-    "XAI",
-    "DEEPSEEK",
-    "OLLAMA",
-  ];
-
   return (
     <div className="border-t border-border pt-3 flex flex-col gap-2">
       <span className="text-[10px] text-muted-foreground">
-        Override the fleet default for individual agents. When set, the named
-        agent runs on the chosen provider; all other agents follow the fleet
-        default above. Key resolved from stored keys first, then env.
+        Each agent runs its own recommended Ollama Cloud model out of the box
+        (shown as RECOMMENDED). Pin an explicit provider/model to override the
+        recommendation, or pick FLEET DEFAULT to follow the fleet provider
+        above. Keys resolve from stored keys first, then env.
       </span>
       {isError && (
         <span className="text-[10px] text-terminal-red">
@@ -684,9 +687,12 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
         </span>
       )}
       {agents.map((agent) => {
-        const currentOption =
-          agent.providerOverride != null
-            ? agent.providerOverride
+        const preset = presets.get(agent.agentId);
+        const isOverridden = agent.providerOverride != null;
+        const currentOption = isOverridden
+          ? (agent.providerOverride as string)
+          : preset
+            ? `RECOMMENDED (${preset.provider})`
             : `FLEET DEFAULT (${fleetProvider})`;
         const effectiveProvider = agent.providerOverride ?? fleetProvider;
         const modelOptions = providerModels[effectiveProvider] ?? [];
@@ -702,10 +708,22 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
             <InlineSelect
               label={agent.agentId}
               value={currentOption}
-              options={PROVIDER_OPTIONS}
+              options={[
+                `RECOMMENDED (${preset?.provider ?? "OLLAMA"})`,
+                `FLEET DEFAULT (${fleetProvider})`,
+                "OPENAI",
+                "ANTHROPIC",
+                "GOOGLE",
+                "XAI",
+                "DEEPSEEK",
+                "OLLAMA",
+              ]}
               onChange={(v) => {
-                const isDefault = v.startsWith("FLEET DEFAULT");
-                const nextProvider = isDefault ? null : v;
+                // RECOMMENDED clears the override row: resolution falls back
+                // to the agent's preset (its own model out of the box).
+                const isRecommended = v.startsWith("RECOMMENDED");
+                const isFleet = v.startsWith("FLEET DEFAULT");
+                const nextProvider = isRecommended || isFleet ? null : v;
                 const nextCatalog = nextProvider
                   ? (providerModels[nextProvider] ?? [])
                   : [];
@@ -722,7 +740,14 @@ function AgentLlmConfigSection({ fleetProvider }: { fleetProvider: string }) {
                 });
               }}
             />
-            {showModelPicker && (
+            <span className="text-[9px] text-muted-foreground">
+              {isOverridden
+                ? `PINNED → ${agent.providerOverride}${agent.modelOverride ? ` / ${agent.modelOverride}` : ""}`
+                : preset
+                  ? `${preset.model} — ${preset.rationale}`
+                  : `fleet default — ${fleetProvider}`}
+            </span>
+            {isOverridden && showModelPicker && (
               <InlineSelect
                 label={`${agent.agentId} MODEL`}
                 value={currentModelOption}
@@ -1097,7 +1122,7 @@ function AgentConfigurationSection({
     <>
       <InlineSelect
         label="DEFAULT LLM PROVIDER"
-        description="Live: the agent fleet's model switches to this provider on the next pipeline run (key resolved from the stored keys below, then env)"
+        description="Fallback for agents with no override and no preset; each agent otherwise runs its own recommended Ollama model (see per-agent list below). Key resolved from the stored keys below, then env."
         value={runtime.defaultLlmProvider}
         options={["OPENAI", "ANTHROPIC", "GOOGLE", "XAI", "DEEPSEEK", "OLLAMA"]}
         onChange={(v) => onChange("defaultLlmProvider", v)}

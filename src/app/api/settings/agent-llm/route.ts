@@ -5,6 +5,7 @@ import {
   listAgentLlmConfigs,
   setAgentLlmProvider,
 } from "@/lib/agent-llm-config";
+import { AGENT_MODEL_PRESETS } from "@/lib/agent-model-presets";
 import { getLogger, withEvlog } from "@/lib/evlog";
 import {
   isLlmModelForProvider,
@@ -27,7 +28,12 @@ export const GET = withEvlog(async () => {
 
   const agents = await listAgentLlmConfigs();
   logger.set({ agentCount: agents.length });
-  return Response.json({ agents, providerModels: PROVIDER_MODEL_CATALOG });
+  return Response.json({
+    agents,
+    /** Recommended per-agent defaults (each agent gets its own model). */
+    presets: AGENT_MODEL_PRESETS,
+    providerModels: PROVIDER_MODEL_CATALOG,
+  });
 });
 
 const agentLlmSchema = z.object({

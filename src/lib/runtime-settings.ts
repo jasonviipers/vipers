@@ -81,7 +81,10 @@ const RUNTIME_SETTINGS_DEFAULTS: RuntimeSettings = {
   canaryMaxAllocationPct: null,
   consensusQuorum: 50,
   debugMode: false,
-  defaultLlmProvider: "GOOGLE",
+  // OLLAMA is the operator's default fleet provider; each agent additionally
+  // gets its own role-appropriate Ollama model via the recommended presets
+  // (lib/agent-model-presets.ts) unless explicitly overridden in /settings.
+  defaultLlmProvider: "OLLAMA",
   heartbeatInterval: 30,
   maxDailyLossPct: 3,
   maxOpenPositions: 10,

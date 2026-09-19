@@ -8,6 +8,10 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { agentLlmConfigs } from "@/db/schema/trading";
+import {
+  assertPresetsValid,
+  getAgentModelPreset,
+} from "@/lib/agent-model-presets";
 import { log } from "@/lib/evlog";
 import {
   getLlmApiKey,
@@ -15,6 +19,18 @@ import {
   PROVIDER_MODEL_CATALOG,
 } from "@/lib/llm-credentials";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
+
+// Fail fast at boot if a preset references a model missing from its
+// provider's catalog, or a fleet agent lacks a preset — a silent typo would
+// otherwise surface only as a runtime model-resolution failure.
+assertPresetsValid(PROVIDER_MODEL_CATALOG, [
+  "sentiment-agent",
+  "technical-analysis-agent",
+  "reasoning-analysis-agent",
+  "risk-agent",
+  "order-executor-agent",
+  "orchestrator-agent",
+]);
 
 /**
  * LLM model resolution for the agent fleet.
@@ -101,12 +117,15 @@ const agentProviderCache = new Map<
 >();
 
 /**
- * Resolve the provider + optional model for a specific fleet agent. A
- * per-agent override (agent_llm_configs row, set in /settings) wins;
- * otherwise the agent inherits the operator's DEFAULT LLM PROVIDER. Null
- * rows never override — the fleet default still applies. A missing or
- * corrupt DB falls back to the fleet default, so a config read failure
- * never breaks an agent call.
+ * Resolve the provider + optional model for a specific fleet agent.
+ *
+ * Priority: an explicit per-agent override (agent_llm_configs row, set in
+ * /settings) wins; otherwise the agent's RECOMMENDED PRESET applies
+ * (each agent gets its own role-appropriate Ollama model — see
+ * lib/agent-model-presets.ts); only with neither does the agent inherit
+ * the operator's fleet DEFAULT LLM PROVIDER. A missing or corrupt DB
+ * degrades to the preset/fleet default, so a config read failure never
+ * breaks an agent call.
  */
 async function getProviderForAgent(
   agentId: string,
@@ -129,7 +148,15 @@ async function getProviderForAgent(
       value = { model: row.model ?? null, provider: row.provider };
     }
   } catch {
-    // DB unreachable — fall through to the fleet default.
+    // DB unreachable — fall through to the preset / fleet default.
+  }
+  if (!value) {
+    // No explicit override: the recommended preset gives each agent its own
+    // model out of the box (all presets run OLLAMA).
+    const preset = getAgentModelPreset(agentId);
+    if (preset) {
+      value = { model: preset.model, provider: preset.provider };
+    }
   }
   agentProviderCache.set(agentId, {
     expiresAt: Date.now() + PROVIDER_TTL_MS,
