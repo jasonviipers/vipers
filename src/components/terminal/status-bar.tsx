@@ -32,7 +32,15 @@ export function StatusBar() {
   const pnlPositive = totalPnl >= 0;
 
   return (
-    <footer className="flex items-center justify-between border-t border-border bg-card px-3 py-1 text-xs overflow-hidden sm:px-4">
+    <footer
+      className="flex items-center justify-between border-t border-border bg-card px-3 py-1 text-xs overflow-hidden sm:px-4"
+      style={{
+        // Bottom-most chrome on mobile (renders after the bottom nav): keep
+        // content clear of the iOS home indicator. Inert without
+        // viewport-fit=cover, which the root viewport now sets.
+        paddingBottom: "calc(0.25rem + env(safe-area-inset-bottom))",
+      }}
+    >
       <div className="flex items-center gap-2 overflow-hidden sm:gap-4">
         <span className="shrink-0 text-muted-foreground">
           {totalCount} agents

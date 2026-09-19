@@ -141,7 +141,11 @@ export function AuthModal({
     <dialog
       ref={dialogRef}
       aria-labelledby="auth-title"
-      className="fixed inset-0 z-50 m-auto flex h-full w-full items-center justify-center overflow-y-auto border-0 bg-transparent p-0"
+      // inset-0 alone stretches the fixed box to the visible viewport; the
+      // previous h-full over-constrained height to the LARGEST mobile
+      // viewport, pushing the modal's bottom edge (and any low buttons)
+      // under the address bar.
+      className="fixed inset-0 z-50 m-auto flex w-full items-center justify-center overflow-y-auto border-0 bg-transparent p-0"
     >
       <div className="absolute inset-0 bg-background/80 backdrop-blur-md" />
       <div className="relative z-10 flex min-h-full w-full items-center justify-center p-4">
