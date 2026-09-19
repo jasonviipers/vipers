@@ -7,6 +7,7 @@ import {
   storeScrapedMessages,
 } from "@/ai/scrape-store";
 import { env } from "@/env";
+import { log } from "@/lib/evlog";
 
 /**
  * SENTIMENT team data source: Reddit + RSS news, scored with VADER.
@@ -149,6 +150,7 @@ async function fetchRedditPosts(
   const terms = assetTerms(asset);
   const query = terms[0] ?? baseSymbol(asset).toLowerCase();
   const out: RedditPost[] = [];
+  let blocked = 0;
 
   await Promise.all(
     SUBREDDITS.map(async (sub) => {
@@ -158,6 +160,13 @@ async function fetchRedditPosts(
       try {
         const res = await fetchWithTimeout(url);
         if (!res.ok) {
+          blocked += 1;
+          return;
+        }
+        // Reddit's block interstitial is served as HTML; parsing it as JSON
+        // would throw and be swallowed below — count it as a block instead.
+        if (!(res.headers.get("content-type") ?? "").includes("json")) {
+          blocked += 1;
           return;
         }
         const json = (await res.json()) as {
@@ -175,14 +184,28 @@ async function fetchRedditPosts(
           }
         }
       } catch {
-        // One dead/rate-limited subreddit shouldn't kill the run.
-        // NOTE (ops): Reddit's public .json endpoints frequently
-        // rate-limit or block cloud provider IP ranges (AWS/GCP)
-        // without warning. Monitor `sources.reddit` staying near 0
-        // as a signal this path has silently gone dark.
+        blocked += 1;
       }
     }),
   );
+
+  // CONFIRMED 2026-09-19 (this deployment): every r/<sub>/search.json call
+  // returns 403 with Reddit's "network security" HTML interstitial while
+  // www.reddit.com itself answers 200 — the SEARCH endpoints are blocked
+  // for this network identity (UA changes don't help; api./oauth. alias
+  // 403 identically). Until the reddit path moves to OAuth API credentials
+  // or another provider, expect blocked === SUBREDDITS.length and zero
+  // reddit rows in the scraper archive. Warn once per pass when fully dark
+  // so the ops signal below is observable, not silent.
+  if (blocked > 0 && out.length === 0) {
+    log.warn({
+      blockedSubreddits: blocked,
+      job: "market-signals",
+      source: "reddit",
+      totalSubreddits: SUBREDDITS.length,
+      warning: "reddit public JSON blocked — archive gets no reddit rows",
+    });
+  }
 
   return out;
 }
@@ -496,7 +519,6 @@ export async function fetchRedditSignals(
         author: p.subreddit ? `r/${p.subreddit}` : null,
         body: p.title,
         externalId: p.permalink ?? p.title,
-        sentimentScore: (p.score ?? 0) / 1000,
         url: p.permalink ? `https://reddit.com${p.permalink}` : null,
       })),
     );
