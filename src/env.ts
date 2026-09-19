@@ -42,9 +42,19 @@ export const env = createEnv({
     // the SENTIMENT tool degrades to a clearly labeled fallback rather than
     // inventing market data.
     STOCKTWITS_API_KEY: z.string().optional(),
-    // Optional Twitter/X API v2 Bearer token for scrapeTwitter. When absent
-    // the tool returns unconfigured:true instead of inventing tweets.
+    // Optional Twitter/X API v2 Bearer token for the XDK-based tweet
+    // sentiment tool. X_API_BEARER_TOKEN is the canonical name; the legacy
+    // TWITTER_BEARER_TOKEN is kept as an alias. When both are absent the tool
+    // returns unconfigured:true instead of inventing tweets.
+    X_API_BEARER_TOKEN: z.string().optional(),
     TWITTER_BEARER_TOKEN: z.string().optional(),
+    // Optional Reddit app-only OAuth credentials (script-app). When both are
+    // set, reddit fetches authenticate against https://oauth.reddit.com with
+    // an app access token (client_credentials), bypassing the public
+    // .json 403 network blocks. When absent the tool falls back to the
+    // public endpoints and honestly reports blocked status instead.
+    REDDIT_CLIENT_ID: z.string().optional(),
+    REDDIT_CLIENT_SECRET: z.string().optional(),
     // Optional Redis connection (Upstash rediss:// or any Redis URL). When
     // absent, caches fall back to in-process memory. Parsed by src/lib/redis.ts.
     REDIS_URL: z.string().optional(),
@@ -74,7 +84,10 @@ export const env = createEnv({
     SESSION_SECRET: process.env.SESSION_SECRET,
     AGENT_API_KEYS: process.env.AGENT_API_KEYS,
     STOCKTWITS_API_KEY: process.env.STOCKTWITS_API_KEY,
+    X_API_BEARER_TOKEN: process.env.X_API_BEARER_TOKEN,
     TWITTER_BEARER_TOKEN: process.env.TWITTER_BEARER_TOKEN,
+    REDDIT_CLIENT_ID: process.env.REDDIT_CLIENT_ID,
+    REDDIT_CLIENT_SECRET: process.env.REDDIT_CLIENT_SECRET,
     REDIS_URL: process.env.REDIS_URL,
     PAPER_BOOK_NOTIONAL_USD: process.env.PAPER_BOOK_NOTIONAL_USD,
   },

@@ -117,6 +117,74 @@ function averageToUnit(nums: number[]): number {
   return Number(((avg + 1) / 2).toFixed(3));
 }
 
+// ── Reddit OAuth (app-only / "script" app) ─────────────────────────────
+//
+// The public www.reddit.com .json endpoints are blocked for many server
+// network identities (403 HTML interstitial; confirmed 2026-09-19). Reddit's
+// OAuth API at oauth.reddit.com serves the SAME listings/search payloads
+// and honors app-only Basic auth — when REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET
+// are configured (a "script" app from https://www.reddit.com/prefs/apps),
+// fetches go there instead.
+
+const REDDIT_TOKEN_URL = "https://www.reddit.com/api/v1/access_token";
+
+let redditTokenCache: { accessToken: string; expiresAtMs: number } | null =
+  null;
+
+function isRedditOAuthConfigured(): boolean {
+  return Boolean(
+    env.REDDIT_CLIENT_ID?.trim() && env.REDDIT_CLIENT_SECRET?.trim(),
+  );
+}
+
+/**
+ * Fetch (and cache until ~1h before expiry) an app-only access token via
+ * the client_credentials grant with HTTP Basic auth. Token responses are
+ * JSON: { access_token, token_type, expires_in, ... }.
+ */
+async function getRedditAccessToken(): Promise<string> {
+  const now = Date.now();
+  if (redditTokenCache && redditTokenCache.expiresAtMs > now + 60_000) {
+    return redditTokenCache.accessToken;
+  }
+  const basic = Buffer.from(
+    `${env.REDDIT_CLIENT_ID?.trim()}:${env.REDDIT_CLIENT_SECRET?.trim()}`,
+  ).toString("base64");
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  let res: Response;
+  try {
+    res = await fetch(REDDIT_TOKEN_URL, {
+      body: "grant_type=client_credentials",
+      headers: {
+        Authorization: `Basic ${basic}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "viipers-market-signals/1.0",
+      },
+      method: "POST",
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    throw new Error(`Reddit token request failed: ${res.status}`);
+  }
+  const payload = (await res.json()) as {
+    access_token?: string;
+    expires_in?: number;
+  };
+  if (!payload.access_token) {
+    throw new Error("Reddit token response carried no access_token");
+  }
+  const ttlMs = (payload.expires_in ?? 3600) * 1000;
+  redditTokenCache = {
+    accessToken: payload.access_token,
+    expiresAtMs: now + ttlMs,
+  };
+  return payload.access_token;
+}
+
 async function fetchWithTimeout(url: string, ms = 8000): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -151,14 +219,43 @@ async function fetchRedditPosts(
   const query = terms[0] ?? baseSymbol(asset).toLowerCase();
   const out: RedditPost[] = [];
   let blocked = 0;
+  const useOAuth = isRedditOAuthConfigured();
+
+  // The OAuth token is fetched ONCE per pass (not per subreddit) — the
+  // client_credentials grant is rate-limited too.
+  let bearer: string | null = null;
+  if (useOAuth) {
+    try {
+      bearer = await getRedditAccessToken();
+    } catch (error) {
+      log.warn({
+        job: "market-signals",
+        source: "reddit",
+        warning: `reddit OAuth token fetch failed, falling back to public endpoints: ${String(error)}`,
+      });
+    }
+  }
 
   await Promise.all(
     SUBREDDITS.map(async (sub) => {
+      // oauth.reddit.com serves the same .json payloads under the same
+      // query semantics (restrict_sr etc.) with a Bearer token.
       const url =
-        `https://www.reddit.com/r/${sub}/search.json` +
+        (bearer
+          ? `https://oauth.reddit.com/r/${sub}/search.json`
+          : `https://www.reddit.com/r/${sub}/search.json`) +
         `?q=${encodeURIComponent(query)}&restrict_sr=1&sort=relevance&t=week&limit=${limitPerSub}`;
       try {
-        const res = await fetchWithTimeout(url);
+        const res = bearer
+          ? await fetch(url, {
+              headers: {
+                Accept: "application/json",
+                Authorization: `Bearer ${bearer}`,
+                "User-Agent": "viipers-market-signals/1.0",
+              },
+              signal: AbortSignal.timeout(8000),
+            })
+          : await fetchWithTimeout(url);
         if (!res.ok) {
           blocked += 1;
           return;
@@ -189,21 +286,19 @@ async function fetchRedditPosts(
     }),
   );
 
-  // CONFIRMED 2026-09-19 (this deployment): every r/<sub>/search.json call
-  // returns 403 with Reddit's "network security" HTML interstitial while
-  // www.reddit.com itself answers 200 — the SEARCH endpoints are blocked
-  // for this network identity (UA changes don't help; api./oauth. alias
-  // 403 identically). Until the reddit path moves to OAuth API credentials
-  // or another provider, expect blocked === SUBREDDITS.length and zero
-  // reddit rows in the scraper archive. Warn once per pass when fully dark
-  // so the ops signal below is observable, not silent.
+  // When the public endpoints are fully blocked and no OAuth fallback
+  // exists (or it also failed), warn so the "reddit silently dark" state is
+  // observable in logs rather than an empty archive nobody can explain.
   if (blocked > 0 && out.length === 0) {
     log.warn({
       blockedSubreddits: blocked,
       job: "market-signals",
+      oauthAttempted: useOAuth,
       source: "reddit",
       totalSubreddits: SUBREDDITS.length,
-      warning: "reddit public JSON blocked — archive gets no reddit rows",
+      warning: bearer
+        ? "reddit OAuth fetch failed — archive gets no reddit rows"
+        : "reddit public JSON blocked — archive gets no reddit rows",
     });
   }
 
