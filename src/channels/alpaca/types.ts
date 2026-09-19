@@ -114,3 +114,12 @@ export interface AlpacaHistoricalBarsResponse {
   next_page_token?: string | null;
   symbol: string;
 }
+
+/**
+ * Paginated crypto historical-bars response (v1beta3 multi-symbol):
+ * `bars` is keyed by symbol (e.g. "BTC/USD"), not a flat array.
+ */
+export interface AlpacaCryptoHistoricalBarsResponse {
+  bars: Record<string, AlpacaBar[]> | null;
+  next_page_token?: string | null;
+}

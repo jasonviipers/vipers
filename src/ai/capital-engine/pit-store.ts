@@ -37,25 +37,26 @@ export function brokerIdForKind(kind: "bars" | "sentiment"): string {
   return kind === "sentiment" ? "scraper-archive" : "alpaca";
 }
 
+/**
+ * The stored jsonb payload shape as WRITTEN by the ingestion jobs: the flat
+ * PIT dataset ({ asset, points }) — the same shape `hashPitDataset` pins.
+ * (An older nested-envelope reader here never matched any write, so every
+ * legitimately-stored row failed verification — fixed by reading flat.)
+ */
 interface StoredDataset<T> {
-  dataset: { asset: string; points: PitDataset<T>["points"] };
-  datasetHash: string;
+  asset: string;
+  points: PitDataset<T>["points"];
 }
 
 function loadStored<T>(raw: unknown, asset: string): PitDataset<T> {
   const stored = raw as StoredDataset<T> | null;
-  if (
-    !stored ||
-    !stored.dataset ||
-    !Array.isArray(stored.dataset.points) ||
-    typeof stored.datasetHash !== "string"
-  ) {
+  if (!stored || !Array.isArray(stored.points)) {
     throw new PitStoreError(
       `stored ${asset} dataset row is malformed — re-ingest it`,
       500,
     );
   }
-  return { asset, points: stored.dataset.points };
+  return { asset, points: stored.points };
 }
 
 /** The latest ingested bar dataset for an asset, hash-verified. */

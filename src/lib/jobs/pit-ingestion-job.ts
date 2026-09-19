@@ -63,10 +63,13 @@ export interface PitIngestionResult {
   kind: "bars" | "sentiment";
 }
 
+/**
+ * The stored jsonb payload shape as WRITTEN below: the flat PIT dataset
+ * ({ asset, points }); the pinned hash lives in the `dataset_hash` column.
+ */
 interface StoredDataset {
   asset: string;
-  dataset: { asset: string; points: Array<PitPoint<SimulationBar>> };
-  datasetHash: string;
+  points: Array<PitPoint<SimulationBar>>;
 }
 
 /** Validate a stored jsonb payload before trusting it as a PIT dataset. */
@@ -75,19 +78,14 @@ function parseStoredDataset(raw: unknown): StoredDataset | null {
     return null;
   }
   const candidate = raw as Partial<StoredDataset>;
-  if (
-    typeof candidate.asset !== "string" ||
-    typeof candidate.datasetHash !== "string" ||
-    !candidate.dataset ||
-    !Array.isArray(candidate.dataset.points)
-  ) {
+  if (typeof candidate.asset !== "string" || !Array.isArray(candidate.points)) {
     return null;
   }
   try {
     // A cache hit must be an internally valid PIT dataset (sorted, sane).
     createPitDataset<SimulationBar>({
-      asset: candidate.dataset.asset,
-      points: candidate.dataset.points,
+      asset: candidate.asset,
+      points: candidate.points,
     });
   } catch {
     return null;
@@ -169,7 +167,10 @@ export async function runPitIngestion(input: {
 
   // Idempotent path: a cached dataset whose coverage spans the window wins.
   const [cachedRow] = await db
-    .select({ dataset: pitDatasets.dataset })
+    .select({
+      dataset: pitDatasets.dataset,
+      datasetHash: pitDatasets.datasetHash,
+    })
     .from(pitDatasets)
     .where(
       and(
@@ -182,12 +183,12 @@ export async function runPitIngestion(input: {
     .orderBy(desc(pitDatasets.windowStartMs))
     .limit(1);
   const cached = parseStoredDataset(cachedRow?.dataset);
-  if (cached) {
+  if (cached && cachedRow) {
     return {
       asset: input.asset,
-      barCount: cached.dataset.points.length,
+      barCount: cached.points.length,
       brokerId,
-      datasetHash: cached.datasetHash,
+      datasetHash: cachedRow.datasetHash,
       kind: "bars",
       reused: true,
       window,

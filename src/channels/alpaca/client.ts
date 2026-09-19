@@ -3,6 +3,7 @@ import { createAlpacaConfig } from "./config";
 import type {
   AlpacaAccount,
   AlpacaBar,
+  AlpacaCryptoHistoricalBarsResponse,
   AlpacaCryptoLatestBarsResponse,
   AlpacaEquityLatestBarResponse,
   AlpacaErrorPayload,
@@ -178,8 +179,10 @@ class AlpacaClient {
    * Historical bars for a symbol over [start, end] (epoch ms), following
    * pagination to exhaustion. Equities use the stocks v2 bars endpoint;
    * crypto (slash-prefixed symbols) use the v1beta3 crypto bars endpoint —
-   * the same split as getLatestPrice. Bars come back ascending by time.
-   * Feeds the point-in-time backtest dataset (src/lib/jobs/pit-ingestion-job.ts).
+   * the same split as getLatestPrice. Crypto requires the symbol as a
+   * `symbols` query param against a locale-scoped path and returns bars
+   * keyed per symbol. Bars come back ascending by time. Feeds the
+   * point-in-time backtest dataset (src/lib/jobs/pit-ingestion-job.ts).
    */
   async getHistoricalBars(
     symbol: string,
@@ -199,21 +202,30 @@ class AlpacaClient {
       if (pageToken) {
         query.page_token = pageToken;
       }
-      const res = isCrypto
-        ? await this.request<AlpacaHistoricalBarsResponse>(
-            "GET",
-            `/v1beta3/crypto/${encodeURIComponent(symbol)}/bars`,
-            { baseUrl: "data", query },
-          )
-        : await this.request<AlpacaHistoricalBarsResponse>(
-            "GET",
-            `/v2/stocks/${encodeURIComponent(symbol)}/bars`,
-            { baseUrl: "data", query: { ...query, feed: "sip" } },
-          );
-      if (res.bars) {
-        all.push(...res.bars);
+      let nextPageToken: string | null | undefined;
+      if (isCrypto) {
+        const res = await this.request<AlpacaCryptoHistoricalBarsResponse>(
+          "GET",
+          "/v1beta3/crypto/us/bars",
+          { baseUrl: "data", query: { ...query, symbols: symbol } },
+        );
+        if (res.bars) {
+          // The crypto feed keys bars by the FULL symbol ("BTC/USD").
+          all.push(...(res.bars[symbol] ?? []));
+        }
+        nextPageToken = res.next_page_token;
+      } else {
+        const res = await this.request<AlpacaHistoricalBarsResponse>(
+          "GET",
+          `/v2/stocks/${encodeURIComponent(symbol)}/bars`,
+          { baseUrl: "data", query: { ...query, feed: "sip" } },
+        );
+        if (res.bars) {
+          all.push(...res.bars);
+        }
+        nextPageToken = res.next_page_token;
       }
-      pageToken = res.next_page_token ?? undefined;
+      pageToken = nextPageToken ?? undefined;
     } while (pageToken);
     return all;
   }
